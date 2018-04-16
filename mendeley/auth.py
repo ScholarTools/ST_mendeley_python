@@ -303,10 +303,13 @@ class _UserAuthorization(_Authorization):
     
     """
     This class represents an access token (and refresh token). An access token 
-    allows a program to access user specific information. This class should 
-    normally be retrieved by:
+    allows a program to access user specific information. 
     
-    1) retrieve_user_authorization
+    This class should normally be retrieved by:
+    
+        retrieve_user_authorization()
+        
+    This class relies on the user configuration.    
     
     Attributes
     ----------
@@ -324,9 +327,7 @@ class _UserAuthorization(_Authorization):
         value is "bearer"
         
     """  
-    
-    
-       
+
     
     def __init__(self, user_name=None, user_info=None, session = None):
         """
@@ -356,7 +357,11 @@ class _UserAuthorization(_Authorization):
         self.init_json_attributes(json)
         self.save()
      
-	def recreate_initial_token(self):
+    def recreate_initial_token(self):
+        """
+        Sometimes the token becomes invalid. When this happens this code
+        attempts to reobtain the initial token.
+        """
 
         #TODO: Support prompting user if we can't find
         #the user name in the config file => presumably the user
@@ -482,24 +487,22 @@ class _UserAuthorization(_Authorization):
         #---------------------------------------
         #create_initial_token(self,user_info):
         if r.status_code != requests.codes.ok:
-        	error_data = r.json()
+            error_data = r.json()
             if error_data["error"] == "invalid_grant":
                 self.recreate_initial_token()
                 return
         
+            #Currently non-fixable error
             _print_error("Error for user: ", self.user_name)
             
             if (self.from_disk):
                 _print_error("Credentials loaded from:\n%s" % self.get_file_path(self.user_name))
-            
-            _print_error("------------------------------------------------")
-            _print_error(r.text)
-            _print_error("------------------------------------")
-            #This assumes we are loading from disk ...
-            _print_error("The current solution is to delete the saved credentials")
-            import pdb
-            pdb.set_trace()
-            raise errors.AuthException('TODO: Fix me, request failed ...')
+                _print_error("------------------------------------------------")
+                _print_error(r.text)
+                _print_error("------------------------------------")
+                #This assumes we are loading from disk ...
+                _print_error("The current solution is to delete the saved credentials")
+                raise errors.AuthException('TODO: Fix me, request failed ...')
       
         self.init_json_attributes(r.json())      
         self.save()

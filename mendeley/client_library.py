@@ -3,10 +3,25 @@
 The goal of this code is to support hosting a client library. This module
 should in the end function similarly to the Mendeley Desktop.
 
-Features:
----------
+Features
+--------
 1) Initializes a representation of the documents stored in a user's library
 2) Synchronizes the local library with updates that have been made remotely
+    
+Usage
+-----
+from mendeley import client_library
+temp = client_library.UserLibrary(verbose=True)
+
+
+Library dataframe properties
+----------------------------
+1) All doi are stored as lower
+- how are DOI stored?????
+- For example we could have doi.dx.org/10.17 or whatever
+- Need to store the minimum canonical DOI
+
+
 
 """
 
@@ -26,7 +41,7 @@ from PyQt5.QtWidgets import *
 
 # Local imports
 from .api import API
-from .errors import *
+from . import errors
 from . import models
 from . import utils
 
@@ -48,9 +63,14 @@ class UserLibrary:
     api : mendeley.api.API
     user_name : string
     verbose : bool
-    sync_result : Sync
+        Whether or not to print out verbose messages.
+    sync_result : Sync or None
+        This is used for ...
     docs : Pandas DataFrame
-    raw : list of json object dicts
+        Library data as organized into a DataFrame.
+    raw : [dict]
+        Each dictionay contains a json entry for a document. This contains
+        the document exactly as returned from the Mendeley server.
     """
 
     FILE_VERSION = 1
@@ -113,53 +133,73 @@ class UserLibrary:
     #     archivist = archive_library.Archivist(library=self, api=self.api)
     #     archivist.archive()
 
-    def get_document(self, doi=None, pmid=None, index=None, return_json=False, allow_multiple=False, _check=False):
+    def get_document(self, 
+                     doi=None, 
+                     pmid=None, 
+                     index=None, 
+                     return_json=False, 
+                     allow_multiple=False, 
+                     _check=False):
         """
         Returns the document (i.e. metadata) based on a specified identifier.
         
         Parameters
         ----------
         doi : string (default None)
+            If specified we'll find the document based on the specified doi
         pmid : string (default None)
+            If specified we'll find the document based on the specifid pmid
         index : int (default None)
+        
+        #TODO: Support indices ...
             
         return_json : bool (default False)
+            If true, the results are returned as JSON
         allow_multiple : bool (default False)
-            Not yet implemented
-
+            If true then multiple entries are allowed. This changes the return
+            type from a single element to a list.
+        _check : bool (default False)
+            If true, then the goal is simply to assess the count of the matches
+            not the value of the matches.
 
         Returns
-        -------
+        -------   
+        int
+            If _check is True
         models.Document object
             If return_json is False
         JSON
             If return_json is True
             
-        If allow_multiple is True, then a list of results will be returned.
+        If allow_multiple is True, then a list of results will be returned,
+        regardless of wehther or not we have more than one entry.
         """
+            
+
+
         
-        """
-        TODO: We could support an indices input, that would return a list
-        """        
+        # TODO: Change this so that it interacts with the database, 
+        #not the Pandas dataframe
 
-        # TODO: Change this so that it interacts with the database, not the Pandas dataframe
-
-        parse_rows = True
-
+        parse_df_rows = True
         document_json = None
 
+        #1) Index recognition
+        #-----------------------------------------------------------
+        #TODO: We could support an indices input, that would return a list
+        #=> "indices"
         if index is not None:
             if index < 0 or index >= len(self.docs):
                 if _check and index > 0:
-                    return False
+                    return 0
                 else:
-                    raise Exception('Out of bounds index request')
+                    raise errors.UserLibraryError('Out of bounds index request')
             elif _check:
-                return True
+                return 1
                 
             #For an index, we expect a single result
             document_json = [self.docs.ix[index]['json']]
-            parse_rows = False
+            parse_df_rows = False
 
         elif doi is not None:
             #All dois in the library are stored as lower
@@ -167,44 +207,53 @@ class UserLibrary:
         elif pmid is not None:
             df_rows = self.docs[self.docs['pmid'] == pmid]
         else:
-            raise Exception('get_document: Unrecognized identifier search option')
+            raise errors.UserCodeError('get_document: Unrecognized identifier search option')
 
 
         # Handling of the parsing of the rows
         # ------------------------------------
-        if parse_rows:
+        #
+        #   We parse rows when 
+        if parse_df_rows:
             # We parse rows when the rows to grab has not been specified
-            # explicitly and we need to determine if we found any matches
+            # explicitly (i.e. as an index) and we need to determine 
+            # if we found any matches
+            
             rows_json = df_rows['json']
-            if len(rows_json) == 1:
+            n_results = len(rows_json)
+            if n_results == 1:
                 document_json = [rows_json[0]]
-            elif len(rows_json) == 0:
+            elif n_results == 0:
                 if _check:
-                    return False
+                    return 0
                 else:
                     if doi is not None:
-                        raise DocNotFoundError('DOI: "%s" not found in library' % doi)
+                        raise errors.DocNotFoundError('DOI: "%s" not found in library' % doi)
                     elif pmid is not None:
-                        raise DocNotFoundError('PMID: "%s" not found in library' % pmid)
+                        raise errors.DocNotFoundError('PMID: "%s" not found in library' % pmid)
                     else:
                         raise Exception('Code logic error, this should never run')
             else: 
                 if allow_multiple:
                     document_json = [x for x in rows_json]
                 elif _check:
-                    return False
+                    return n_results
                 else:
                     if doi is not None:
-                        raise Exception('Multiple DOIs found for doi: "%s"' % doi)
+                        raise Exception(
+                                '%d DOIs found for doi: "%s", use option allow_multiple=True if multiple results is ok' 
+                                        % (n_results,doi))
                     elif pmid is not None:
-                        raise Exception('Multiple PMIDs found for pmid: %s"' % pmid)
+                        raise Exception(
+                                '%d PMIDs found for pmid: %s", use option allow_multiple=True if multiple results is ok' 
+                                % (n_results,pmid))
                     else:
                         raise Exception('Code logic error, this should never run')
               
         # Returning the results
         # ------------------------
         if _check:
-            return True
+            return len(document_json)
         elif return_json:
             if allow_multiple:
                 return document_json
@@ -231,12 +280,21 @@ class UserLibrary:
         Returns
         -------
         bool - True if DOI is found in the Mendeley library. False otherwise.
+            This function is also true if multiple matches are found
         """
         
-        return self.get_document(doi=doi,pmid=pmid,_check=True)
+        return self.get_document(doi=doi,pmid=pmid,
+                                 _check=True,allow_multiple=True) > 0
 
-    def add_to_library(self, doi=None, pmid=None, check_in_lib=False, add_pdf=True, file_path=None):
+    def add_to_library(self, 
+                       doi=None, 
+                       pmid=None, 
+                       check_in_lib=False, 
+                       add_pdf=True, 
+                       file_path=None):
         """
+        
+        JAH: I think this method is still under development ...
         
         Parameters
         ----------
@@ -255,8 +313,10 @@ class UserLibrary:
         if not possible
         
         """
+        
+        #JAH: Why doesn't this take in any inputs on the check???
         if check_in_lib and self.check_for_document():
-            raise DuplicateDocumentError('Document already exists in library.')
+            raise errors.DuplicateDocumentError('Document already exists in library.')
 
         #----------------------------------------------------------------------
         # Get paper information from DOI
@@ -310,8 +370,8 @@ class UserLibrary:
     def update_file_from_local(self, doi=None, pmid=None):
         """
         This is for updating a file in Mendeley without losing the annotations.
-        The file must be saved somewhere locally, and the file path is selected by using
-        a pop up file selection window.
+        The file must be saved somewhere locally, and the file path is selected
+        by using a pop up file selection window.
 
         Parameters
         ----------
@@ -510,13 +570,19 @@ class UserLibrary:
 class Sync(object):
     """
     This object should perform the syncing and include some 
-    debugging information as well
+    debugging information as well.
     
     Attributes
     ----------
+    deleted_ids
+    trash_ids
+    new_and_updated_docs
+    n_docs_removed
+    newest_modified_time
     time_deleted_check
     time_full_retrieval
     time_modified_check
+    time_modified_processing
     time_trash_retrieval
     time_update_sync
     
@@ -577,7 +643,7 @@ class Sync(object):
         # within the caller
         doc_set = self.api.documents.get(modified_since=newest_modified_time, view='all',limit=0)
 
-		nu_docs_as_json = [x.json for x in doc_set.docs]
+        nu_docs_as_json = [x.json for x in doc_set.docs]
         
         #TODO: Does this need to be classed?
         #If not, build json view above view="json"
@@ -652,8 +718,8 @@ class Sync(object):
 
         start_modified_time = ctime()
         
-		doc_set = self.api.documents.get(modified_since=newest_modified_time, view='all',limit=0)
-		nu_docs_as_json = [x.json for x in doc_set.docs]
+        doc_set = self.api.documents.get(modified_since=newest_modified_time, view='all',limit=0)
+        nu_docs_as_json = [x.json for x in doc_set.docs]
 		        
         self.new_and_updated_docs = doc_set.docs
         self.time_modified_check = ctime() - start_modified_time
@@ -661,7 +727,7 @@ class Sync(object):
         if len(nu_docs_as_json) == 0:
             return
 	
-		self.verbose_print('Request returned %d updated or new docs' % len(nu_docs_as_json))
+        self.verbose_print('Request returned %d updated or new docs' % len(nu_docs_as_json))
 	
         df = _raw_to_data_frame(nu_docs_as_json)
 
@@ -678,7 +744,7 @@ class Sync(object):
         #    db_interface.add_to_db(row)
             
             
-		if len(new_rows_df) > 0:
+        if len(new_rows_df) > 0:
             self.verbose_print('%d new documents found' % len(new_rows_df))
             self.docs = self.docs.append(new_rows_df)
             
@@ -723,8 +789,8 @@ class Sync(object):
         trash_start_time = ctime()
         self.verbose_print('Checking trash')
 
-		trash_set = self.api.trash.get(limit=0, view='ids')
-		self.trash_ids = trash_set.docs
+        trash_set = self.api.trash.get(limit=0, view='ids')
+        self.trash_ids = trash_set.docs
 
         self.verbose_print('Finished checking trash, %d documents found' % len(self.trash_ids))
         self.time_trash_retrieval = ctime() - trash_start_time
@@ -735,14 +801,8 @@ class Sync(object):
         deletion_start_time = ctime()
         self.verbose_print('Requesting deleted file IDs')
 
-        # This is way way faster :/ than the documents.get() method although
-        # it is only documented sparsly.
-        # TODO: We could do the string conversion in the api
-        #JAH: 2018-04 - method no longer exists :/
-        #self.deleted_ids = self.api.documents.deleted_files(since=newest_modified_time)
         #TODO: What happens if newest_modified_time is empty????
-        #
-        #=> Do we even run this code???
+        #   => Do we even run this code???
         temp = self.api.documents.get(deleted_since=newest_modified_time,limit=0)
         self.deleted_ids = temp.docs
 

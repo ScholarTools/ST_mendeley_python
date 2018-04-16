@@ -1,30 +1,47 @@
 # -*- coding: utf-8 -*-
 """
+The configuration is a user specified file. This module works with those
+user specified files.
+
+See Also
+--------
+
+
 """
 
 #Standard Library Imports
+import sys
 import os
 import importlib.machinery #Python 3.3+
 
 #Local Imports
 #---------------------------------------------------------
 from . import errors
+
+def _print_error(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs) 
+
 # Can't use utils in this module - circular imports
 #from . import utils
-from mendeley.errors import *
+#from mendeley.errors import InvalidConfig
 
 try:
     from . import user_config as config
 except ImportError:
+    _print_error("----------------   User Config Info  ----------------")
+    _print_error("Copy config_template.py to user_config.py")
+    _print_error("Edit as necessary")
+    _print_error("------------------------------------")   
     raise errors.InvalidConfig('user_config.py not found')
         
-      
+#config_location redirection if necessary
+#-------------------------------------------------      
 if hasattr(config,'config_location'):
     #In this case the config is really only a pointer to another config  
     config_location = config.config_location
     
     if not os.path.exists(config_location):
-        raise InvalidConfig('Specified configuration path does not exist')
+        raise errors.InvalidConfig('Specified configuration path does not exist')
     
     loader = importlib.machinery.SourceFileLoader('config', config_location)    
     config = loader.load_module()
@@ -37,15 +54,18 @@ class Config(object):
     Attributes
     ----------
     Oauth2Credentials : 
-    DefaultUser : User
+    default_user
+    default_save_path : 
+    other_users : User
     
     """
     
     def __init__(self):
         
-        #This initialization code also defines what we are looking for or not looking for
+        #This initialization code also defines what we are looking for or 
+        #not looking for
         if not hasattr(config,'Oauth2Credentials'):
-            raise Exception('user_config.py requires a "Oauth2Credentials" class')
+            raise errors.InvalidConfig('user_config.py requires a "Oauth2Credentials" class')
         
         self.Oauth2Credentials = config.Oauth2Credentials        
         
@@ -61,7 +81,7 @@ class Config(object):
         self.validate()
     
     def get_user(self,user_name):
-		"""
+        """
         Calling Forms
         -------------
         1) Returns default user
@@ -72,6 +92,10 @@ class Config(object):
 
         3) Returns user if specs can be found
         self.get_user(user_name)
+        
+        Returns
+        -------
+        User
 
         """
 
@@ -86,19 +110,22 @@ class Config(object):
         #
         #This was created for recreating auth tokens when the name is known
         #rather than only knowing 'default'
-        # - i.e. if the 'default' user is 'Jim' then if we request 'Jim'
-        #	in this function then we need to be able to get the default user credentials
-		if self.default_user.user_name == user_name:
+        #- i.e. if the 'default' user is 'Jim' then if we request 'Jim'
+        #	  in this function then we need to be able to get the default 
+        #  user credentials
+        if self.default_user.user_name == user_name:
             return self.default_user
          
-            
+        #If the default fails, fall back to other_users    
         if not hasattr(self,'other_users'):
-            raise Exception('Missing user and other_users is not specified in the config file')
+            raise errors.InvalidConfig(
+                    'Missing user and other_users is not specified in the config file')
             
         other_users = self.other_users
         
         if user_name not in other_users:
-            raise Exception('other_users config parameter is missing the requested user name')
+            raise errors.InvalidConfig(
+                    'other_users config parameter is missing the requested user name')
             
         user_data = other_users[user_name]
         
@@ -122,9 +149,9 @@ class Config(object):
 
     
         auth_creds = self.Oauth2Credentials
-        ensure_present_and_not_empty(auth_creds,'Oauth2Credentials','client_secret')
-        ensure_present_and_not_empty(auth_creds,'Oauth2Credentials','client_id')
-        ensure_present_and_not_empty(auth_creds,'Oauth2Credentials','redirect_url')
+        _ensure_present_and_not_empty(auth_creds,'Oauth2Credentials','client_secret')
+        _ensure_present_and_not_empty(auth_creds,'Oauth2Credentials','client_id')
+        _ensure_present_and_not_empty(auth_creds,'Oauth2Credentials','redirect_url')
         #TODO: can check that redirect url is valid    
         
         #   Optional Values
@@ -133,9 +160,9 @@ class Config(object):
         #   DefaultUser validation
         if hasattr(self,'DefaultUser'):
             du = self.DefaultUser
-            ensure_present_and_not_empty(du,'DefaultUser','user_name')
+            _ensure_present_and_not_empty(du,'DefaultUser','user_name')
             #TODO: Could check for an email (i.e. user name is typically an email)        
-            ensure_present_and_not_empty(du,'DefaultUser','password')   
+            _ensure_present_and_not_empty(du,'DefaultUser','password')   
     
         #   default_save_path validation
         if hasattr(config,'default_save_path'):
@@ -168,7 +195,7 @@ class Config(object):
     '''
 
 
-def ensure_present_and_not_empty(obj_or_dict,name,key_or_attribute,none_is_ok=False):
+def _ensure_present_and_not_empty(obj_or_dict,name,key_or_attribute,none_is_ok=False):
     
     """
     Inputs
@@ -186,29 +213,41 @@ def ensure_present_and_not_empty(obj_or_dict,name,key_or_attribute,none_is_ok=Fa
         if key_or_attribute in obj_or_dict:
             value = obj_or_dict[key_or_attribute]
         else:
-            raise InvalidConfig('%s is missing the entry %s, please fix the config file' % (name,key_or_attribute))
+            raise errors.InvalidConfig('%s is missing the entry %s, please fix the config file' % (name,key_or_attribute))
     else:
         if hasattr(obj_or_dict,key_or_attribute):
             value = getattr(obj_or_dict,key_or_attribute)
         else:
-            raise InvalidConfig('%s is missing the entry %s, please fix the config file' % (name,key_or_attribute))
+            raise errors.InvalidConfig('%s is missing the entry %s, please fix the config file' % (name,key_or_attribute))
             
     
     if value is None:
         if none_is_ok:
             pass
         else:
-            raise InvalidConfig('"%s" in %s was found to have none value which is not allowed, please fix the config file' % (key_or_attribute,name))
+            raise errors.InvalidConfig('"%s" in %s was found to have none value which is not allowed, please fix the config file' % (key_or_attribute,name))
     elif len(value) == 0:
-        raise InvalidConfig('"%s" in %s was found to be empty and needs to be filled in, please fix the config file' % (key_or_attribute,name))
+        raise errors.InvalidConfig('"%s" in %s was found to be empty and needs to be filled in, please fix the config file' % (key_or_attribute,name))
 
 class User(object):
     
     def __init__(self,config_default_user):
-        #TODO: Allow variations on the User formats
+        """
+            Inputs
+            ------
+            config_default_user : class
+                Should have the following properties
+                    .user_name
+                    .password
+            
+            #TODO: Allow variations on the User formats
             #e.g => (user_name,password) or list
             #e.g => JSON or YAML            
-            #e.g. => currently a class
-            #=> promote to a class        
+        """
+    
+        #if isinstance(config_default_user,dict):
+        #   
+        #
+    
         self.user_name = config_default_user.user_name
         self.password = config_default_user.password

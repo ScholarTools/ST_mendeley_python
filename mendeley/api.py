@@ -240,12 +240,12 @@ class API(object):
         self.last_params = params
 
         if not resp.ok:
- 			_print_error("----------------   Error Details   ----------------")
-			_print_error("Mendeley API Get Requested Failed")
-			_print_error("Url: %s" % url)
-			_print_error("Raw Response:")
-			_print_error(resp.text)
-			_print_error("------------------------------------")            
+            _print_error("----------------   Error Details   ----------------")
+            _print_error("Mendeley API Get Requested Failed")
+            _print_error("Url: %s" % url)
+            _print_error("Raw Response:")
+            _print_error(resp.text)
+            _print_error("------------------------------------")            
            
             raise Exception('Call failed with status: %d, see above for details' % (resp.status_code))
 
@@ -1015,7 +1015,7 @@ class Trash(object):
         verbose = _process_verbose(self.parent,kwargs,response_params)
 
         if verbose:
-             if limit == 0:
+            if limit == 0:
                 print("Requesting all trash documents from Mendeley with params: %s" % (kwargs))    
             else:
                 print("Requesting up to %d trash documents from Mendeley with params: %s" % (limit, kwargs))

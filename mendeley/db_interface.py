@@ -20,7 +20,7 @@ from mendeley.optional import base_objects as obj
 
 
 #TODO: Enumerate errors
-from mendeley.errors import *
+from . import errors
 
 #Public Interface
 #------------------------------------------------
@@ -120,9 +120,12 @@ def update_reference_field(identifying_value, updating_field, updating_value,
 
 
 def check_for_document(doi):
+    """
+    JAH: What is this used for ??????
+    """
     try:
         docs = db.get_saved_info(doi)
-    except MultipleDoiError:
+    except errors.MultipleDoiError:
         docs = None
         pass
 
@@ -133,8 +136,9 @@ def check_for_document(doi):
 
 
 def follow_refs_forward(doi):
-	"""
-	"""
+    
+    """
+    """
     return db.follow_refs_forward(doi)
 
 

@@ -3,7 +3,14 @@
 Contains all custom errors called within the mendeley_python package.
 """
 
+class UserCodeError(Exception):
+    pass
+
 class InvalidConfig(Exception):
+    """
+        Used to indicate that either a config is missing or that something 
+        is incorrect about the config specification.
+    """
     pass
 
 class OptionalLibraryError(Exception):
@@ -14,13 +21,19 @@ class UnsupportedEntryTypeError(Exception):
 
 
 # ----------------- User Library Errors ----------------
-class DOINotFoundError(KeyError):
+class UserLibraryError(Exception):
     pass
-
-class DocNotFoundError(KeyError):
+    
+class DocNotFoundError(UserLibraryError):
     pass
+    
+#class DOINotFoundError(MissingDocError):
+#    pass
 
-class DuplicateDocumentError(Exception):
+#class DocNotFoundError(MissingDocError):
+#    pass
+
+class DuplicateDocumentError(UserLibraryError):
     pass
 
 class CallFailedException(Exception):

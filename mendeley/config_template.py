@@ -8,18 +8,20 @@ as appropriate.
 
 The "user_config.py" file is ignored from GIT commits so as to not be public
 
-The "config_location" parameter can be used to specify a remote location from which
-to load the config file.
-
+The "config_location" parameter can be used to specify a remote location 
+from which to load the config file.
 
 """
 
 #If specified, this specifies that the config file should be loaded
 #from the specified location. 
 #
-#	*** If specified, this should be the only value in the file.
+#	******* If specified, this should be the only value in the file. *******
 config_location = 'C:\users\my_mendeley_config.py'
 
+#==============================================================================
+#                       Main File Contents
+#==============================================================================
 
 # REQUIRED. This can be obtained from Mendeley.
 #
