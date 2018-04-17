@@ -61,22 +61,39 @@ class UserLibrary:
     Attributes
     ----------
     api : mendeley.api.API
-    user_name : string
-    verbose : bool
-        Whether or not to print out verbose messages.
-    sync_result : Sync or None
-        This is used for ...
+    db_session :  db_interface.DBSessionInterface or None
+        NOT YET IMPLEMENTED ...
+    dirty_db : 
+        If True specifies that the DB needs to be updated/fixed based on the 
+        local docs.
     docs : Pandas DataFrame
         Library data as organized into a DataFrame.
+    user_name : string
+        Name of the user to process. FORMAT????
+    verbose : bool
+        Whether or not to print out verbose messages.
     raw : [dict]
         Each dictionay contains a json entry for a document. This contains
         the document exactly as returned from the Mendeley server.
+    sync_result : Sync or None
+        This is used for mainly for debugging.
+    
     """
 
     FILE_VERSION = 1
 
     def __init__(self, user_name=None, verbose=False, sync=True):
+        """
+        Inputs
+        ------
+        user_name : string (default None)
+            If no user is specified the default user is loaded from the 
+            configuration file.
+        verbose : bool (default False)
+        sync : bool (default True)
+        """
         
+        self.dirty_db = False
         self.api = API(user_name=user_name,verbose=verbose)
         self.user_name = self.api.user_name
         self.verbose = verbose
@@ -95,12 +112,21 @@ class UserLibrary:
             self.sync_result = None
 
     def __repr__(self):
+        if self.db_session is None:
+            db_text = 'DB not loaded, repo ST_library_db missing'
+        else:
+            db_text = cld(self.db_session)
+            
         pv = ['api',        cld(self.api),
+              'db_session', db_text,
+              'dirty_db',   self.dirty_db,
               'user_name',  self.user_name,
               'docs',       cld(self.docs),
+              'file_path',  self.file_path,
               'raw',        cld(self.raw),
               'sync_result', cld(self.sync_result),
               'verbose',    self.verbose]
+        
         return utils.property_values_to_string(pv)
 
     def sync(self,verbose=None):
@@ -384,7 +410,7 @@ class UserLibrary:
 
         document = self.get_document(doi=doi, pmid=pmid, return_json=True)
         if document is None:
-            raise DOINotFoundError('Could not locate DOI in library.')
+            raise errors.DOINotFoundError('Could not locate DOI in library.')
 
         new_file_path = self._file_selector()
         if new_file_path is None:
@@ -419,6 +445,9 @@ class UserLibrary:
 
 
     def _file_selector(self):
+        #TODO: Test this with non * imports
+        #
+        #Why is this line needed???
         app = QApplication(sys.argv)
         dialog = QFileDialog()
         # dialog.setFileMode(QFileDialog.DirectoryOnly)
@@ -547,6 +576,7 @@ class UserLibrary:
         return entry
 
     def _load(self):
+        
         # TODO: Check that the file is not empty ...
         if os.path.isfile(self.file_path):
             with open(self.file_path, 'rb') as pickle_file:
@@ -554,7 +584,20 @@ class UserLibrary:
 
             self.raw = d['raw']
             self.docs = _raw_to_data_frame(self.raw)
+            self.dirty_db = d.get("dirty_db",True)
+            
+            if db_interface.db_available:
+                self.db_session = db_interface.DBSessionInterface(self.user_name)
+                if self.dirty_db:
+                    #TODO: Fix it
+                    #self.dirty_db = False
+                    pass
+            else:
+                self.db_session = None
+
         else:
+            #Initialze defaults ...
+            self.db_session = None
             self.raw = None
             self.docs = None
 
@@ -562,6 +605,7 @@ class UserLibrary:
         d = dict()
         d['file_version'] = self.FILE_VERSION
         d['raw'] = self.raw
+        d['dirty_db'] = self.dirty_db
         # d['raw_trash'] = self.raw_trash
         with open(self.file_path, 'wb') as pickle_file:
             pickle.dump(d, pickle_file)
@@ -574,11 +618,21 @@ class Sync(object):
     
     Attributes
     ----------
+    raw : json
+    df : 
+    
+    
     deleted_ids
     trash_ids
     new_and_updated_docs
     n_docs_removed
     newest_modified_time
+    
+        ---- Times ----
+    full_retrieval_time    
+    
+    
+    
     time_deleted_check
     time_full_retrieval
     time_modified_check
@@ -590,7 +644,18 @@ class Sync(object):
     
     """
 
-    def __init__(self, api, raw, verbose=False):
+    def __init__(self, api, db_session, raw_json, verbose=False):
+        """
+        
+        Inputs
+        ------
+        api :
+        raw : 
+            
+        """
+        
+        self.db_session = db_session
+        
         self.time_full_retrieval = None
         self.time_deleted_check = None
         self.time_trash_retrieval = None
@@ -604,7 +669,7 @@ class Sync(object):
         self.api = api
         self.verbose = verbose
 
-        self.raw = raw
+        self.raw_json = raw_json
 
         # Populated_values
         # -----------------
@@ -618,8 +683,8 @@ class Sync(object):
             self.update_sync()
 
     def __repr__(self):
-        pv = ['raw', cld(self.raw), 
-            'docs', cld(self.docs),
+        pv = ['raw_json', cld(self.raw_json), 
+            'dataframe', cld(self.dataframe),
             'time_full_retrieval', fstr(self.time_full_retrieval),
             'time_update_sync', fstr(self.time_update_sync),
             'newest_modified_time', self.newest_modified_time,
@@ -639,20 +704,15 @@ class Sync(object):
         t1 = ctime()
         self.verbose_print('Starting retrieval of all documents')
 
-        # TODO: Change limit to -1, build in support for getting all
-        # within the caller
-        doc_set = self.api.documents.get(modified_since=newest_modified_time, view='all',limit=0)
+        json_data = self.api.documents.get(view='all',limit=0,return_type='json')
 
-        nu_docs_as_json = [x.json for x in doc_set.docs]
-        
-        #TODO: Does this need to be classed?
-        #If not, build json view above view="json"
-        self.raw = nu_docs_as_json
-        self.docs = _raw_to_data_frame(self.raw)
+        self.raw_json = json_data
+        self.dataframe = _raw_to_data_frame(json_data)
 
-		#TODO: Only if we support the db interface ...
-        for entry in self.raw:
-            db_interface.add_to_db(entry)
+        #TODO: How are we referring to the database? 
+        if self.db_session is not None:
+            for entry in self.raw:
+                self.db_session.add_to_db(entry)
 
         self.full_retrieval_time = ctime() - t1
 
@@ -796,7 +856,8 @@ class Sync(object):
         self.time_trash_retrieval = ctime() - trash_start_time
 
     def get_deleted_ids(self, newest_modified_time):
-
+        """
+        """
         # 2) Check deleted
         deletion_start_time = ctime()
         self.verbose_print('Requesting deleted file IDs')
@@ -810,6 +871,9 @@ class Sync(object):
         self.time_deleted_check = ctime() - deletion_start_time
 
     def remove_old_ids(self):
+        """
+        JAH: When is this called????
+        """
         # Removal of ids
         # --------------
         ids_to_remove = self.trash_ids + self.deleted_ids

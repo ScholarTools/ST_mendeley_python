@@ -43,7 +43,7 @@ except ImportError:
 
 
 try:
-    from library_db import db_logging as db
+    from library_db import db_session as db
 except ImportError:
     db = MissingModule('The method called requires the library "ST_library_db" from the Scholar Tools Github repo')
 

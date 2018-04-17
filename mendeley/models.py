@@ -715,7 +715,10 @@ class Document(ResponseObject):
 #==============================================================================
  
 def get_ids_only(json, m):
-    return json["id"]    
+    return json["id"]   
+
+def get_json_only(json, m):
+    return json
   
 
 # ???? How does this compare to

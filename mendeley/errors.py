@@ -19,6 +19,9 @@ class OptionalLibraryError(Exception):
 class UnsupportedEntryTypeError(Exception):
     pass
 
+#------------------- API -------------------------------
+class CallFailedException(Exception):
+    pass
 
 # ----------------- User Library Errors ----------------
 class UserLibraryError(Exception):
@@ -36,8 +39,7 @@ class DocNotFoundError(UserLibraryError):
 class DuplicateDocumentError(UserLibraryError):
     pass
 
-class CallFailedException(Exception):
-    pass
+
 
 class PDFError(Exception):
     pass

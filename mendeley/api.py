@@ -58,15 +58,15 @@ import json
 
 #Third party
 import requests
+from requests import ConnectionError
 
 #Local Imports
 from . import auth
 from . import models
 from . import utils
-from . import user_config
+#from . import user_config
 
-#TODO: I'd like to switch to importing specific errors ...
-from .errors import *
+from . import errors
 
 PY2 = int(sys.version[0]) == 2
 
@@ -92,7 +92,8 @@ document_fcns = {None: models.Document,
                  'patent': models.PatentDocument,
                  'all': models.AllDocument,
                  'deleted': models.DeletedDocument,
-				 'ids': models.get_ids_only
+			   'ids': models.get_ids_only, 
+                 'json': models.get_json_only
                  }
 
 def _print_error(*args, **kwargs):
@@ -175,16 +176,17 @@ class API(object):
         r = self.s.post(url, data=params, auth=self.access_token, headers=headers, files=files)
 
         if not r.ok:
-            # if r.status_code != good_status:
             print(r.text)
             print('')
-            # TODO: This should be improved
-            raise CallFailedException('Call failed with status: %d' % (r.status_code))
+            raise errors.CallFailedException('Call failed with status: %d' % (r.status_code))
 
         return self.handle_return(r, return_type, response_params, object_fh)
 
-    def make_get_request(self, url, object_fh, params, response_params=None, headers=None):
+    def make_get_request(self, url, object_fh, params, 
+                         response_params=None, headers=None):
         """
+        
+        Make a GET request to the server and return the response.
 
         Parameters:
         -----------          
@@ -221,6 +223,8 @@ class API(object):
 
         return_type = params.pop('_return_type', self.default_return_type)
 
+        """
+        JAH: I'm not sure what this is ...
         # Each dev token is only good for 90 days
         # https://development-tokens.mendeley.com/
         dev_token = user_config.dev_token
@@ -229,11 +233,15 @@ class API(object):
             headers = {'Development-Token': dev_token}
         else:
             headers['Development-Token'] = dev_token
+        """
 
         # NOTE: We make authorization go through the access token. The request
         # will call the access_token prior to sending the request. Specifically
         # the __call__ method is called.
-        resp = self.s.get(url, params=params, auth=self.access_token, headers=headers)
+        try:
+            resp = self.s.get(url, params=params, auth=self.access_token, headers=headers)
+        except ConnectionError:
+            raise Exception('Failed to connect to the server, this usually happens if there is no internet connection')
 
         self.last_url = url
         self.last_response = resp
@@ -275,6 +283,10 @@ class API(object):
         return self.handle_return(resp, return_type, response_params, object_fh)
 
     def handle_return(self, req, return_type, response_params, object_fh):
+        """
+        This should only occur after the calling function has verified
+        that no error was returned from the server.
+        """
         if return_type is 'object':
             if response_params is None:
                 return object_fh(req.json(), self)
@@ -499,8 +511,6 @@ class Documents(object):
             id = kwargs.pop('id')
             url += '/%s/' % id
             
-        
-
         convert_datetime_to_string(kwargs, 'modified_since')
         convert_datetime_to_string(kwargs, 'deleted_since')
 

@@ -95,19 +95,19 @@ def user_name_to_file_name(user_name):
 
 #JAH: This calls into the config and is the only function to do so
 #I think this would be better in the config itself ...
-def get_save_root(sub_directories_list, create_folder_if_no_exist=True):
+def get_save_root(sub_directories_list=None, create_folder_if_no_exist=True):
     """
     This function returns the location of the folder in which to save data
     for a given calling function.
     
        
-	Default Location
-	----------------
+    Save Location
+    ----------------
     The default save location is:
         <repo root>/data
     
-    This value can be overridden by placing the value 'default_save_path'
-    in the user_config file.
+    Override in user_config via:
+        default_save_path = "this/is/my/path"
     
     Parameters
     ----------
@@ -120,8 +120,9 @@ def get_save_root(sub_directories_list, create_folder_if_no_exist=True):
     root_path = utils.get_save_root(['client_library'], True)    
     
     """
-
-    if not isinstance(sub_directories_list, list):
+    if sub_directories_list is None:
+        sub_directories_list = []
+    elif not isinstance(sub_directories_list, list):
         # Assume string, normally I would check for a string but apparently this
         # is a bit quirky with Python 2 vs 3
         sub_directories_list = [sub_directories_list]
