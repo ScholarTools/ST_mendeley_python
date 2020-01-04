@@ -1,19 +1,21 @@
 # -*- coding: utf-8 -*-
 """
+TODO: We should document assumptions here ...
+
 """
 import sys
 import nose
 import json
 
 from mendeley import API
-from mendeley import client_library
-from mendeley.errors import *
-
-from database import db_logging as db
+#from mendeley.errors import *
 
 
-m = API()
-lib = client_library.UserLibrary()
+#TODO: This needs to be a test as well, can we instantiate the API????
+#m = API()
+m = API(force_reload_auth=True)
+
+a_status = m.definitions.academic_statuses()
 
 doc_id_list = []
 

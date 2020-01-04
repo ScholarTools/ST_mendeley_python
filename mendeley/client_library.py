@@ -36,14 +36,12 @@ import json
 #Third Party Imports
 import pandas as pd
 
-#TODO: This should be optional 
-from PyQt5.QtWidgets import *
-
 # Local imports
 from .api import API
 from . import errors
 from . import models
 from . import utils
+from . import config
 
 # Optional Local Imports
 #-----------------------------
@@ -82,7 +80,7 @@ class UserLibrary:
 
     FILE_VERSION = 1
 
-    def __init__(self, user_name=None, verbose=False, sync=True):
+    def __init__(self, user_name=None, verbose=False, sync=True, force_new=False):
         """
         Inputs
         ------
@@ -91,6 +89,8 @@ class UserLibrary:
             configuration file.
         verbose : bool (default False)
         sync : bool (default True)
+        force_new : bool (default False)
+            If true the library is not loaded from disk.
         """
         
         self.dirty_db = False
@@ -100,11 +100,11 @@ class UserLibrary:
 
         # path handling
         # -------------
-        root_path = utils.get_save_root(['client_library'], True)
+        root_path = config.get_save_root(['client_library'], True)
         save_name = utils.user_name_to_file_name(self.user_name) + '.pickle'
         self.file_path = os.path.join(root_path, save_name)
 
-        self._load()
+        self._load(force_new)
 
         if sync:
             self.sync()
@@ -650,7 +650,7 @@ class Sync(object):
         Inputs
         ------
         api :
-        raw : 
+        raw_json : 
             
         """
         
@@ -711,26 +711,32 @@ class Sync(object):
 
         #TODO: How are we referring to the database? 
         if self.db_session is not None:
-            for entry in self.raw:
+            for entry in self.raw_json:
                 self.db_session.add_to_db(entry)
 
         self.full_retrieval_time = ctime() - t1
 
-        if self.raw is not None:
+        if self.raw_json is not None:
             self.verbose_print('Finished retrieving all documents (n=%d) in %s seconds'
-                                % (len(self.raw), fstr(self.full_retrieval_time)))
+                                % (len(self.raw_json), fstr(self.full_retrieval_time)))
         else:
             self.verbose_print('No documents found in %s seconds'
                                % fstr(self.full_retrieval_time))
 
     def update_sync(self):
-
+        
+        """
+        Update Steps
+        ------------
+        1. 
+        """
+        
         self.verbose_print('Running "UPDATE SYNC"')
 
         start_sync_time = ctime()
 
         # Let's work with everything as a dataframe
-        self.docs = _raw_to_data_frame(self.raw)
+        self.docs = _raw_to_data_frame(self.raw_json)
 
         # Determine the document that was updated most recently. We'll ask for
         # everything that changed after that time. This avoids time sync
@@ -761,7 +767,7 @@ class Sync(object):
         self.time_modified_processing = ctime() - updates_and_new_entries_start_time
         self.verbose_print('Done updating modified and new documents')
 
-        self.raw = self.docs['json'].tolist()
+        self.raw_json = self.docs['json'].tolist()
 
         self.time_update_sync = ctime() - start_sync_time
 
@@ -888,11 +894,11 @@ class Sync(object):
             print(msg)
 
 
-def _raw_to_data_frame(raw, include_json=True):
+def _raw_to_data_frame(raw_json, include_json=True):
     """
     Parameters
     ----------
-    raw : json
+    raw_json : json
         JSON data, generally (always?) from the Mendeley server. 
     """
     
@@ -906,7 +912,7 @@ def _raw_to_data_frame(raw, include_json=True):
     
     # Note that I'm not using the local attribute
     # as we can then use this for updating new information
-    df = pd.DataFrame(raw,dtype="object")
+    df = pd.DataFrame(raw_json,dtype="object")
 
 	#https://github.com/pandas-dev/pandas/issues/1972
     df = df.where(pd.notnull(df), None)    
@@ -917,7 +923,7 @@ def _raw_to_data_frame(raw, include_json=True):
         return df
         
     if include_json:
-        df['json'] = raw    
+        df['json'] = raw_json    
                 
     #Ensuring minimum format
     #---------------------------------------

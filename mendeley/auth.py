@@ -7,7 +7,8 @@ In general it is better to interact with the API directly, rather than
 interacting with this module.
 
 Mendeley Authethentication Documentation:
-http://apidocs.mendeley.com/home/authentication
+https://dev.mendeley.com/reference/topics/authorization_overview.html
+https://dev.mendeley.com/reference/topics/authorization_auth_code.html
 
 Important Methods
 -----------------
@@ -19,6 +20,7 @@ retrieve_user_authorization
 #Standard Library
 from __future__ import print_function
 
+import random
 import pickle
 import os
 import sys
@@ -34,7 +36,7 @@ import pytz #This seems to be a 3rd party library but is installed on
 #Local imports
 from . import utils
 from .utils import get_truncated_display_string as td
-from .utils import get_list_class_display as cld
+#from .utils import get_list_class_display as cld
 from . import config
 from . import errors
 
@@ -51,25 +53,28 @@ These are methods that other modules might want to access directly.
 
 """
 
-def retrieve_public_authorization():
-    """
+def retrieve_public_authorization(force_reload=False):
+    """    
     Loads public credentials
 
     Returns:
     --------
     PublicCredentials    
     """
-    
-    if _PublicAuthorization.token_exists_on_disk():
+    if force_reload:
+        return _PublicAuthorization()
+    elif _PublicAuthorization.token_exists_on_disk():
         return _PublicAuthorization.load()
     else:
         return _PublicAuthorization()
         
-def retrieve_user_authorization(user_name=None,user_info=None,session=None):
+def retrieve_user_authorization(user_name=None,user_info=None,session=None,force_reload=False):
     """
     
     """
-    if _UserAuthorization.token_exists_on_disk(user_name,user_info):
+    if force_reload:
+        return _UserAuthorization(user_name,user_info,session)
+    elif _UserAuthorization.token_exists_on_disk(user_name,user_info):
         return _UserAuthorization.load(user_name,user_info,session)
     else:
         return _UserAuthorization(user_name,user_info,session)
@@ -85,8 +90,8 @@ class _Authorization(AuthBase):
     _UserAuthorization
     _PublicAuthorization
     
-    TODO: I currently have a lot of duplicated code between the two classes that
-    needs to be moved to here.
+    TODO: I currently have a lot of duplicated code between the two classes 
+    that needs to be moved to here.
     # - get_file_path()
     # - renew_token_if_necessary()
     
@@ -112,7 +117,7 @@ class _Authorization(AuthBase):
     #Default value: check if there is less than 1 minute
     RENEW_TIME = datetime.timedelta(minutes = 1) 
     
-    AUTH_URL = 'https://api-oauth2.mendeley.com/oauth/token'   
+    AUTH_URL = 'https://api.mendeley.com/oauth/token'   
    
     @staticmethod
     def get_save_base_path(create_folder_if_no_exist = False):
@@ -130,7 +135,7 @@ class _Authorization(AuthBase):
                 os.makedirs(save_folder_path)
             return save_folder_path
         else:
-            return utils.get_save_root(['credentials'],create_folder_if_no_exist)
+            return config.get_save_root(['credentials'],create_folder_if_no_exist)
 
     @property
     def token_expired(self):        
@@ -337,7 +342,7 @@ class _UserAuthorization(_Authorization):
             Allows retrieval of the user's credential information based
             on an alias 
         user_info : UserInfo
-        session :        
+        session : TODO: Is this even being used????
         
         Examples
         --------
@@ -451,24 +456,28 @@ class _UserAuthorization(_Authorization):
             config.Oauth2Credentials.client_id,
             config.Oauth2Credentials.client_secret)
         
-        post_data = {"grant_type"   :   "refresh_token",
-                     "refresh_token":   self.refresh_token,
-                     "redirect_uri":    config.Oauth2Credentials.redirect_url}
+        post_data = {"grant_type"   : "refresh_token",
+                     "refresh_token": self.refresh_token,
+                     "redirect_uri" : config.Oauth2Credentials.redirect_url}
        
         #TODO: We should replace this with the session object            
-        r = requests.post(self.AUTH_URL,auth=client_auth,data=post_data)
+        r = requests.post(self.AUTH_URL, auth=client_auth, data=post_data)
       
         #Observed errors:
         #----------------------------------
         #1) {"error":"invalid_grant","error_description":"Invalid grant"}
         #
         # - Was fixed by deleting the pickled version of the credentials
-           
+        #
+        #   401
+        #   {"message":"Credentials are required to access this resource."}
+        
         #http://dev.mendeley.com/reference/topics/authorization_auth_code.html
         #
         #Possible errors include (I think):
         # 1) invalid_request - values were missing in request
-        # 2) unsupported_grant_type - when the grant type is not refresh_token or authorization_code
+        # 2) unsupported_grant_type - when the grant type is not refresh_token 
+        #   or authorization_code
         # 3) invalid_grant - values were invalid
         
 
@@ -481,7 +490,6 @@ class _UserAuthorization(_Authorization):
         #'unsupported_grant_type'
         # => none of these
         #throw specific errors for each of these
-        
         
         #Renewal code
         #---------------------------------------
@@ -496,12 +504,14 @@ class _UserAuthorization(_Authorization):
             _print_error("Error for user: ", self.user_name)
             
             if (self.from_disk):
-                _print_error("Credentials loaded from:\n%s" % self.get_file_path(self.user_name))
+                _print_error("Credentials loaded from:\n%s" % 
+                             self.get_file_path(self.user_name))
                 _print_error("------------------------------------------------")
                 _print_error(r.text)
                 _print_error("------------------------------------")
                 #This assumes we are loading from disk ...
-                _print_error("The current solution is to delete the saved credentials")
+                _print_error("The current solution is to delete the"
+                             " saved credentials")
                 raise errors.AuthException('TODO: Fix me, request failed ...')
       
         self.init_json_attributes(r.json())      
@@ -582,34 +592,98 @@ class UserTokenRetriever(object):
         
         """    
         
-        URL = 'https://api-oauth2.mendeley.com/oauth/authorize'
+        #Beautiful Soup requirement - we could consider Selenium ...
+        import bs4 as bs
+
         
-        #STEP 1: Get form
+        URL = 'https://api.mendeley.com/oauth/authorize'
+        
+        rand_state = random.random()
+        
+        #Note this pipeline currently assumes the user is not signed in
+        #via the session.
+        
+        #STEP 1: Get signin form
         #----------------------------------------------
         payload = {
             'client_id'     : config.Oauth2Credentials.client_id,
-            'redirect_uri'  : 'https://localhost',
+            'redirect_uri'  : config.Oauth2Credentials.redirect_url,
+            'response_type' : 'code',
             'scope'         : 'all',
-            'response_type' : 'code'}
+            'state'         : rand_state}
+        
         r = self.session.get(URL, params=payload)
 
         # TODO: build in check for invalid redirect URI
         # Can change redirect URI above
         #
         if r.status_code != requests.codes.ok:
-            import pdb
-            pdb.set_trace()
-            raise Exception('TODO: Fix me, request failed ...')
+            #An invalid request was made by a third-party app
+            #
+            #   The app wasn;t registerd ...???
             
-        #STEP 2: Submit form for user authorizing client use
+            #import pdb
+            #pdb.set_trace()
+            raise Exception('App authorization request failed at step 1')
+         
+
+               
+        #STEP 2: Enter email
         #------------------------------------------------------
+        soup = bs.BeautifulSoup(r.text,'lxml')
+        
+        forms = soup.find_all('form')
+        form2 = forms[1]
+        URL2 = "https://id.elsvier.com" + form2['action']
+        
         payload2 = {
-            'username' : self.user_info.user_name,
-            'password' : self.user_info.password}
-        r2 = self.session.post(r.url,data=payload2,allow_redirects=False)    
+            'pf.username' : self.user_info.user_name,
+            'action' : 'emailContinue'}
         
         import pdb
-                
+        pdb.set_trace()
+        
+        r2 = self.session.post(URL2,data=payload2,allow_redirects=True)
+        
+        if r2.status_code != requests.codes.ok:
+            raise Exception('App authorization request failed at step 2')
+        
+        #STEP 3: Enter Password
+        #-------------------------------------------------------
+        
+        import pdb
+        pdb.set_trace()
+        
+        #password=1234asdf&rememberme=on&action=signin
+
+        
+        payload3 = {
+            'password' : self.user_info.password,
+            'action' : 'signin'}
+        r3 = self.session.post(r2.url,data=payload3,allow_redirects=True)  
+        
+        import pdb
+        pdb.set_trace()
+        
+        payload4 = {
+            'response_type' : 'code',
+            'client_id'     : config.Oauth2Credentials.client_id,
+            'scope'         : 'all',
+            'redirect_uri'  : config.Oauth2Credentials.redirect_url,
+            'state'         : rand_state,
+            'authorized'    : 'true'}
+        
+        r4 = self.session.post(r3.url,data=payload4,allow_redirects=True)  
+        
+        
+        
+        import pdb
+        pdb.set_trace()
+        
+        query = requests.utils.urlparse(r4.url).query
+        params = dict(x.split('=') for x in query.split('&'))
+        #https://localhost/?code=JNTH6janlZskdM2Re3TUWVgIE5I&state=0.23650318353
+        #https://localhost/?error=access_denied&error_description=User+denied+the+request&state=0.23650318353       
         
         if r2.status_code != 302:
             #TODO: Look for 200 with Incorrect details

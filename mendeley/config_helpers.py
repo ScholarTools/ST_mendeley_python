@@ -3,20 +3,23 @@
 The configuration is a user specified file. This module works with those
 user specified files.
 
-See Also
---------
-
-
+The user must currently define a user_config.py file locally. This user_config
+file can point to another file outside the repo that gets synced across
+computers. More info on this can be found at ... (TODO)
 """
 
 #Standard Library Imports
 import sys
 import os
 import importlib.machinery #Python 3.3+
+import inspect
 
 #Local Imports
 #---------------------------------------------------------
 from . import errors
+from . import utils
+#from .utils import get_truncated_display_string as td
+from .utils import get_list_class_display as cld
 
 def _print_error(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs) 
@@ -35,7 +38,8 @@ except ImportError:
     raise errors.InvalidConfig('user_config.py not found')
         
 #config_location redirection if necessary
-#-------------------------------------------------      
+#-------------------------------------------------   
+config_location = None
 if hasattr(config,'config_location'):
     #In this case the config is really only a pointer to another config  
     config_location = config.config_location
@@ -67,16 +71,21 @@ class Config(object):
         if not hasattr(config,'Oauth2Credentials'):
             raise errors.InvalidConfig('user_config.py requires a "Oauth2Credentials" class')
         
-        self.Oauth2Credentials = config.Oauth2Credentials        
+        self.Oauth2Credentials = OauthCredentials(config.Oauth2Credentials)        
         
         if hasattr(config,'DefaultUser'):       
             self.default_user = User(config.DefaultUser)
             
         if hasattr(config,'default_save_path'):
             self.default_save_path = config.default_save_path
+        else:
+            self.default_save_path = None
         
         if hasattr(config,'other_users'):
-            self.other_users = config.other_users
+            self.other_users = {key:User(value) for key,value in config.other_users.items()}
+
+        #TODO: Determine if local or remote here
+        self.config_location = config_location
 
         self.validate()
     
@@ -169,30 +178,19 @@ class Config(object):
             pass
             #TODO: Validate that the path exists
 
-        self.Oauth2Credentials = config.Oauth2Credentials        
-        
-        if hasattr(config,'DefaultUser'):       
-            self.default_user = User(config.DefaultUser)
-            
-        if hasattr(config,'default_save_path'):
-            self.default_save_path = config.default_save_path
-        else:
-            self.default_save_path = None
-        
         if hasattr(config,'other_users'):
-            self.other_users = config.other_users
+            #This is less critical as we are casting in init
+            #TODO - we should really be checking in those constructors ...
+            #for valid data
+            pass
+            
 
-	# TODO: rewrite without using utils
-    # Utils currently calls back into this class
-    # so we want to avoid circular dependencies ...
-    '''
     def __repr__(self):
         pv = ['Oauth2Credentials', cld(self.Oauth2Credentials), 
-              'default_user', cld(getattr(self,'default_user',None)),
-                'default_save_path',getattr(self,'default_save_path',None),
-                'other_users',cld(getattr(self,'other_users',None))]
+              'default_user',   cld(getattr(self,'default_user',None)),
+              'default_save_path',getattr(self,'default_save_path',None),
+              'other_users',    cld(getattr(self,'other_users',None))]
         return utils.property_values_to_string(pv)
-    '''
 
 
 def _ensure_present_and_not_empty(obj_or_dict,name,key_or_attribute,none_is_ok=False):
@@ -229,6 +227,20 @@ def _ensure_present_and_not_empty(obj_or_dict,name,key_or_attribute,none_is_ok=F
     elif len(value) == 0:
         raise errors.InvalidConfig('"%s" in %s was found to be empty and needs to be filled in, please fix the config file' % (key_or_attribute,name))
 
+class OauthCredentials(object):
+    
+    def __init__(self,c):
+
+        self.client_secret = c.client_secret
+        self.client_id = c.client_id
+        self.redirect_url = c.redirect_url
+        
+    def __repr__(self):
+        pv = ['client_secret', self.client_secret, 
+              'client_id', self.client_id,
+              'redirect_url',self.redirect_url]
+        return utils.property_values_to_string(pv)      
+    
 class User(object):
     
     def __init__(self,config_default_user):
@@ -251,3 +263,62 @@ class User(object):
     
         self.user_name = config_default_user.user_name
         self.password = config_default_user.password
+        
+    def __repr__(self):
+        pv = ['user_name', self.user_name, 
+              'password', self.password]
+        return utils.property_values_to_string(pv)   
+
+#JAH: This calls into the config and is the only function to do so
+#I think this would be better in the config itself ...
+def get_save_root(sub_directories_list=None, create_folder_if_no_exist=True):
+    """
+    This function returns the location of the folder in which to save data
+    for a given calling function.
+    
+       
+    Save Location
+    ----------------
+    The default save location is:
+        <repo root>/data
+    
+    Override in user_config via:
+        default_save_path = "this/is/my/path"
+    
+    Parameters
+    ----------
+    sub_directories_list : string or list
+    create_folder_if_no_exist : boolean
+    
+    Examples
+    --------
+    utils.get_save_root(['credentials'],True)
+    root_path = utils.get_save_root(['client_library'], True)    
+    
+    """
+    config = Config()
+    if sub_directories_list is None:
+        sub_directories_list = []
+    elif not isinstance(sub_directories_list, list):
+        # Assume string, normally I would check for a string but apparently this
+        # is a bit quirky with Python 2 vs 3
+        sub_directories_list = [sub_directories_list]
+
+    if getattr(config, 'default_save_path', None) is not None:
+        root_path = config.default_save_path
+        if not os.path.isdir(root_path):
+            raise Exception('Specified default save path does not exist')
+    else:
+        # http://stackoverflow.com/questions/50499/in-python-how-do-i-get-the-path-and-name-of-the-file-that-is-currently-executin/50905#50905
+        package_path = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+
+        # Go up to root, then down to specific save path
+        root_path = os.path.split(package_path)[0]
+        root_path = os.path.join(root_path, 'data')
+
+    save_folder_path = os.path.join(root_path, *sub_directories_list)
+
+    if create_folder_if_no_exist and not os.path.exists(save_folder_path):
+        os.makedirs(save_folder_path)
+
+    return save_folder_path

@@ -114,7 +114,7 @@ class API(object):
         
     """
 
-    def __init__(self, user_name=None, verbose=False):
+    def __init__(self, user_name=None, verbose=False, force_reload_auth=False):
         """
         Parameters
         ----------
@@ -129,17 +129,19 @@ class API(object):
         self.s = requests.Session()
         if user_name == 'public':
             self.public_only = True
-            token = auth.retrieve_public_authorization()
+            token = auth.retrieve_public_authorization(force_reload=force_reload_auth)
             self.user_name = 'public'
         else:
             self.public_only = False
-            token = auth.retrieve_user_authorization(user_name, session=self.s)
+            token = auth.retrieve_user_authorization(user_name, session=self.s,
+                                                     force_reload=force_reload_auth)
             self.user_name = token.user_name
 
         # Options ... (I might change this ...)
         self.default_return_type = 'object'
 
         self.access_token = token
+        self.last_url = None
         self.last_response = None
         self.last_params = None
 
@@ -173,14 +175,21 @@ class API(object):
         if files is None:
             params = json.dumps(params)
 
-        r = self.s.post(url, data=params, auth=self.access_token, headers=headers, files=files)
+        #TODO: Why is this not like GET with a possible connection error?
+        response = self.s.post(url, data=params, auth=self.access_token, headers=headers, files=files)
 
-        if not r.ok:
-            print(r.text)
+    
+        self.last_url = url
+        self.last_response = response
+        self.last_params = params
+
+        if not response.ok:
+            print(response.text)
             print('')
-            raise errors.CallFailedException('Call failed with status: %d' % (r.status_code))
+            raise errors.CallFailedException('Call failed with status: %d' 
+                                                % (response.status_code))
 
-        return self.handle_return(r, return_type, response_params, object_fh)
+        return self.handle_return(response, return_type, response_params, object_fh)
 
     def make_get_request(self, url, object_fh, params, 
                          response_params=None, headers=None):
@@ -239,9 +248,11 @@ class API(object):
         # will call the access_token prior to sending the request. Specifically
         # the __call__ method is called.
         try:
-            resp = self.s.get(url, params=params, auth=self.access_token, headers=headers)
+            resp = self.s.get(url, params=params, auth=self.access_token, 
+                              headers=headers)
         except ConnectionError:
-            raise Exception('Failed to connect to the server, this usually happens if there is no internet connection')
+            raise Exception('Failed to connect to the server, this usually happens'
+                            'if there is no internet connection')
 
         self.last_url = url
         self.last_response = resp
