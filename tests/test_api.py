@@ -7,15 +7,33 @@ import sys
 import nose
 import json
 
+import requests
+
 from mendeley import API
-#from mendeley.errors import *
+# from mendeley.errors import *
 
 
-#TODO: This needs to be a test as well, can we instantiate the API????
-#m = API()
-m = API(force_reload_auth=True)
+# TODO: We need to test if we can instatiate the API
+m = API()
 
-a_status = m.definitions.academic_statuses()
+# Definitions
+# ----------------------------------------------------------------------
+def test_academic_statuses():
+    a_status = m.definitions.academic_statuses()
+
+def test_subjects_areas():
+    #Subdisciplines missing ...
+    subject_areas = m.definitions.subject_areas()
+
+def test_document_types():
+    doc_types = m.definitions.document_types()
+
+
+def test_get_document1():
+    docs = m.documents.get()
+    docs = m.documents.get(limit=1)
+
+
 
 doc_id_list = []
 

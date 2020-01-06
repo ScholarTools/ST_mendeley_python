@@ -50,6 +50,7 @@ Errors
 """
 
 #Standard Library
+from typing import Optional, Union, TypeVar
 import sys
 import mimetypes
 from os.path import basename
@@ -67,6 +68,8 @@ from . import utils
 #from . import user_config
 
 from . import errors
+
+DST = TypeVar('DST',str,datetime,None)
 
 PY2 = int(sys.version[0]) == 2
 
@@ -101,6 +104,23 @@ def _print_error(*args, **kwargs):
 
 #==============================================================================
 class API(object):
+
+    annotations : Annotations
+    definitions : Definitions
+    documents : Documents
+    files : Files
+    folders : Folders
+    trash : Trash
+
+    default_return_type : str
+    #TODO: This isn't correct
+    access_token : str
+
+
+    self.last_url = None
+    self.last_response = None
+    self.last_params = None
+
     """
     
     Attributes
@@ -149,8 +169,8 @@ class API(object):
         self.annotations = Annotations(self)
         self.definitions = Definitions(self)
         self.documents = Documents(self)
-        self.folders = Folders(self)
         self.files = Files(self)
+        self.folders = Folders(self)
         self.trash = Trash(self)
 
     def __repr__(self):
@@ -434,11 +454,17 @@ class Definitions(object):
 
     def subject_areas(self, **kwargs):
         """
+        
+        https://api.mendeley.com/apidocs/docs#!/subject_areas/getSubjectAreas
+        
         Examples
         --------
         from mendeley import API
         m = API()
         d = m.definitions.disciplines()
+        
+        TODO: Missing assignable
+        
         """
         url = BASE_URL + '/subject_areas'
 
@@ -463,13 +489,24 @@ class Documents(object):
     def __init__(self, parent):
         self.parent = parent
 
-    def get(self, **kwargs):
+    def get(self,
+            authored: Optional[bool]=None,
+            deleted_since: DST=None,
+            folder_id: Optional[str]=None,
+            group_id: Optional[str]=None,
+            include_trashed: Optional[bool]=None,
+            limit: int =20,
+            modified_since: Optional[str]=None,
+            id:Optional[str]=None):
         """
         https://api.mendeley.com/apidocs#!/documents/getDocuments
         
         Parameters
         ----------
-        id : 
+        authored : logical
+            TODO
+        id :
+                ????
         group_id : string
             The id of the group that the document belongs to. If not supplied 
             returns users documents.
@@ -482,8 +519,7 @@ class Documents(object):
         profile_id : string
             The id of the profile that the document belongs to, that does not 
             belong to any group. If not supplied returns users documents.
-        authored :
-            TODO
+        
         starred : 
         limit : string or int (default 20)
             Largest allowable value is 500. 

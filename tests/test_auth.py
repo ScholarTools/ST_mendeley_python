@@ -2,7 +2,9 @@
 """
 """
 
-#TODO: Should build in forced renewals
+#TODO: Build in verbose handling
+#TODO: How does this fail when we revoke access in the website
+#TODO: Is there an auth command we can run to ensure the token is valid?
 
 if __name__ == '__main__':
     import sys
@@ -13,9 +15,13 @@ from mendeley import config
 
 
 def test_auth():
+    public_credentials = auth.retrieve_public_authorization(force_reload=True)
+     
     public_credentials = auth.retrieve_public_authorization()
     
     public_credentials.renew_token()
+
+    default_credentials = auth.retrieve_user_authorization(force_reload=True)
 
     default_credentials = auth.retrieve_user_authorization()
     

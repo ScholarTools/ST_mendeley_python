@@ -20,6 +20,7 @@ retrieve_user_authorization
 #Standard Library
 from __future__ import print_function
 
+import re
 import random
 import pickle
 import os
@@ -29,7 +30,7 @@ import datetime
 
 #Third Party
 import requests
-from requests.auth import AuthBase
+from requests.auth import AuthBase, HTTPBasicAuth
 import pytz #This seems to be a 3rd party library but is installed on
 #my local Python installation (Py Timze Zones)
 
@@ -53,7 +54,7 @@ These are methods that other modules might want to access directly.
 
 """
 
-def retrieve_public_authorization(force_reload=False):
+def retrieve_public_authorization(force_reload=False,verbose=False):
     """    
     Loads public credentials
 
@@ -68,16 +69,20 @@ def retrieve_public_authorization(force_reload=False):
     else:
         return _PublicAuthorization()
         
-def retrieve_user_authorization(user_name=None,user_info=None,session=None,force_reload=False):
+def retrieve_user_authorization(user_name=None,
+                                user_info=None,
+                                session=None,
+                                force_reload=False,
+                                verbose=False):
     """
     
     """
     if force_reload:
-        return _UserAuthorization(user_name,user_info,session)
+        return _UserAuthorization(user_name, user_info, session)
     elif _UserAuthorization.token_exists_on_disk(user_name,user_info):
-        return _UserAuthorization.load(user_name,user_info,session)
+        return _UserAuthorization.load(user_name, user_info, session)
     else:
-        return _UserAuthorization(user_name,user_info,session)
+        return _UserAuthorization(user_name, user_info, session)
         
 """
 -------------------------------------------------------------------------------
@@ -558,27 +563,10 @@ class _UserAuthorization(_Authorization):
 
 class UserTokenRetriever(object):
     
-    def __init__(self,user_info,session):
-        """
-        
-        UserTokenRetriever(user_info,session)
-        
-        Parameters
-        ----------
-        user_info : UserInfo
-        session : requests.Session
-        """
-        self.session = session
-        self.user_info = user_info
-        code  = self.get_authorization_code_auto()
-        self.token_json = self.trade_code_for_user_access_token(code)
-
-    def get_authorization_code_auto(self):  
-        """
-        The authorization code is what the user gives to the Client, allowing
-        the Client to make requests on behalf of the User to Mendeley
+    #??? Why is this not underscore leading?
     
-        Rough OAUTH Outline
+    """
+            Rough OAUTH Outline
         -------------------
         1) User askes to use client (i.e. this code or an "app")
         2) Client gives User some information to give to Mendeley regarding
@@ -589,14 +577,120 @@ class UserTokenRetriever(object):
         4) Client now has the information it needs to make requests for the 
         User's data. In most cases (although not this one) this would allow the
         User to never give it's Mendeley credentials to the client.
+    """
+    
+    def __init__(self,user_info,session):
+        """
+        
+        UserTokenRetriever(user_info,session)
+        
+        Parameters
+        ----------
+        user_info : UserInfo
+        session : requests.Session
+        """
+        MANUAL_APPROACH = False
+
+        self.session = session
+        self.user_info = user_info
+        
+        #Authorization Token
+        #---------------------------------
+        BASE_AUTH_URL = "https://api.mendeley.com/oauth/authorize"
+        #TODO: Move these up, change name here to be consistent
+        ACCESS_TOKEN_URL = "https://api.mendeley.com/oauth/token"
+        
+        rand_state = random.random()
+        payload = {
+            'client_id'     : config.Oauth2Credentials.client_id,
+            'redirect_uri'  : config.Oauth2Credentials.redirect_url,
+            'response_type' : 'code',
+            'scope'         : 'all',
+            'state'         : rand_state}
+                
+        req = requests.Request('GET', BASE_AUTH_URL, params=payload)
+        prepped = self.session.prepare_request(req)
+        
+        auth_url = prepped.url
+        
+        if MANUAL_APPROACH:
+            print("Navigate to the following address, follow prompts:")
+            print(auth_url)
+            current_url = input("What's the final url?")
+        else:
+            current_url  = self.get_authorization_code_auto(auth_url)
+        
+        x = re.findall("\?code=([^&]+)",current_url)
+        code = x[0]
+        
+        self.token_json = self.trade_code_for_user_access_token(code,ACCESS_TOKEN_URL)
+
+    def get_authorization_code_auto(self,auth_url):  
+        """
+        The authorization code is what the user gives to the Client, allowing
+        the Client to make requests on behalf of the User to Mendeley
+    
+
         
         """    
+        HEADLESS_BROWSER = True
+        
+        from selenium import webdriver
+        
+        #This registers chromedriver to the path
+        import chromedriver_binary # pylint: disable=unused-import
+        #python-chromedriver in anaconda
+        
+        USER_EMAIL = self.user_info.user_name
+        USER_PASS = self.user_info.password
+        if HEADLESS_BROWSER:
+            options = webdriver.ChromeOptions()
+            options.add_argument('headless')
+            browser = webdriver.Chrome(chrome_options=options)
+        else:
+            browser = webdriver.Chrome()
+        
+        #first page - submit user name    
+        browser.get(auth_url)
+        elem = browser.find_element_by_id("bdd-email")
+        elem.send_keys(USER_EMAIL)
+        submit_button = browser.find_element_by_id("bdd-elsPrimaryBtn")
+        submit_button.click()
+        
+        #next page - submit password
+        #--------------------------------------
+        elem = browser.find_element_by_id("bdd-password")
+        elem.send_keys(USER_PASS)
+        submit_button = browser.find_element_by_id("bdd-elsPrimaryBtn")
+        submit_button.click()
+                
+        current_url = browser.current_url
+        if not current_url.startswith("https://localhost"):
+            submit_button = browser.find_element_by_class_name("button-primary")
+            submit_button.click()
+            current_url = browser.current_url
+         
+        browser.close()
+            
+
+        
+        return current_url
+        
+        """
+        #This is a complete asdlkklfsajdfksjd mess
+        #----------------------------------------------------------------------
+        #
+        #   I couldn't get the submission of the email to work, I have  no
+        #   idea where the mismatch is between my code and what I'm seeing
+        #   in the browser
+        #
+        #   
         
         #Beautiful Soup requirement - we could consider Selenium ...
         import bs4 as bs
 
         
-        URL = 'https://api.mendeley.com/oauth/authorize'
+        
         
         rand_state = random.random()
         
@@ -613,6 +707,9 @@ class UserTokenRetriever(object):
             'state'         : rand_state}
         
         r = self.session.get(URL, params=payload)
+        
+        #r = self.session.get(URL, params=payload,
+        #                     proxies={"http": "http://127.0.0.1:8888", "https":"http:127.0.0.1:8888"},verify=False)
 
         # TODO: build in check for invalid redirect URI
         # Can change redirect URI above
@@ -643,7 +740,13 @@ class UserTokenRetriever(object):
         import pdb
         pdb.set_trace()
         
-        r2 = self.session.post(URL2,data=payload2,allow_redirects=True)
+        r2 = self.session.post(URL2,data=payload2,allow_redirects=True,
+                               headers={'DNT':'1','User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:71.0) Gecko/20100101 Firefox/71.0',
+                                        'referer': r.url,'Origin':'https://id.elsevier.com','Host':'id.elsevier.com'})
+        
+        #r2 = self.session.post(URL2,data=payload2,allow_redirects=True,
+        #                       headers={'DNT':'1','User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:71.0) Gecko/20100101 Firefox/71.0','referer': r.url,'Origin':'https://id.elsevier.com','Host':'id.elsevier.com'},
+        #                       proxies={"http": "http://127.0.0.1:8888", "https":"http:127.0.0.1:8888"},verify=False)
         
         if r2.status_code != requests.codes.ok:
             raise Exception('App authorization request failed at step 2')
@@ -707,20 +810,15 @@ class UserTokenRetriever(object):
         authorization_code = parsed_url.query[5:]
         
         return authorization_code
+        """
 
-    def trade_code_for_user_access_token(self,code):
+    def trade_code_for_user_access_token(self,code,access_token_url):
              
         """
-        This method asks Mendeley for an access token given a user's code. This 
-        code comes from the user telling Mendeley that this client 
-        (identified by a Client ID) has permission to get information 
-        from the user's account.
-        
-        I had wanted to replace the user input with just the code. Once I received
-        the access token, I could then request the user's info. Unfortunately it
-        seems that the default user informaton, particularly the user's email is
-        no longer accessible unless the user has specified an email in 
-        their profile.
+        This method asks Mendeley for an access token given a user's 
+        authentication code. This code comes from the user telling 
+        Mendeley that this client (identified by a Client ID) has permission 
+        to get information from the user's account.
         
         Parameters:
         -----------
@@ -737,25 +835,23 @@ class UserTokenRetriever(object):
         ---------
             
         
-        """
-        
-        URL     = 'https://api-oauth2.mendeley.com/oauth/token'
-        
-        #TODO: This may or may not actually be needed
-        headers = {'content-type': 'application/x-www-form-urlencoded'}
+        """        
+        #headers = {'content-type': 'application/x-www-form-urlencoded'}
         
         payload = {
             'grant_type'    : 'authorization_code',
             'code'          : code,
-            'redirect_uri'  : config.Oauth2Credentials.redirect_url,
-            'client_secret' : config.Oauth2Credentials.client_secret,
-            'client_id'     : config.Oauth2Credentials.client_id,
+            'redirect_uri'  : config.Oauth2Credentials.redirect_url
             } 
     
-        r = self.session.post(URL,headers=headers,data=payload)
+        username = config.Oauth2Credentials.client_id
+        password = config.Oauth2Credentials.client_secret
+        r = self.session.post(access_token_url,
+                              data=payload,
+                              auth=HTTPBasicAuth(username,password))
     
         if r.status_code != requests.codes.ok:
-            raise Exception('TODO: Fix me, request failed ...')    
+            raise Exception('Error requesting initial access token')    
         
         return r.json()
             
