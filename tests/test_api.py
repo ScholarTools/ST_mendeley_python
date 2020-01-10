@@ -30,8 +30,9 @@ def test_document_types():
 
 
 def test_get_document1():
+    m = API()
     docs = m.documents.get()
-    docs = m.documents.get(limit=1)
+    docs = m.documents.get(limit="asdf")
 
 
 

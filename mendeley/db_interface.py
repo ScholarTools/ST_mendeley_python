@@ -1,14 +1,28 @@
+"""
+Status: Jim is currently rewriting
+
+https://stackoverflow.com/questions/40450591/converting-json-to-sql-table
+
+DB
+- create table
+- add entries to table
+    - 1) for now, overwrite local
+    - 2) eventually, if any dirty, then fail (handle later)
+
+
+"""
 
 import math
 import os
 
 # Third party imports
-import pandas
+import pandas as pd
+from sqlalchemy.types import Integer, Text, String, DateTime
+
 
 # Local imports
 from . import utils
 from .optional import MissingModule
-from .optional import db
 
 #Optional Imports
 #------------------------------------
@@ -40,6 +54,11 @@ class DBSessionInterface(object):
         
         self.user_name = user_name
         root_path = self._get_file_save_path()
+
+
+        #TODO: Create the DB at this point ...
+
+
                 
         if db_available:
             self.s = db.DB_Session(user_name, root_path)
@@ -185,6 +204,12 @@ class DBSessionInterface(object):
         """
         """
         return db.follow_refs_forward(doi)
+
+
+
+
+
+
 
 
 def check_multiple_constraints(params):

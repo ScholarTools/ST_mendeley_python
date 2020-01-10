@@ -50,7 +50,7 @@ Errors
 """
 
 #Standard Library
-from typing import Optional, Union, TypeVar
+from typing import Optional, Union, TypeVar, List
 import sys
 import mimetypes
 from os.path import basename
@@ -66,10 +66,12 @@ from . import auth
 from . import models
 from . import utils
 #from . import user_config
+from .utils import get_truncated_display_string as td
+from .utils import get_list_class_display as cld
 
 from . import errors
 
-DST = TypeVar('DST',str,datetime,None)
+DST = Union[str,datetime,None]
 
 PY2 = int(sys.version[0]) == 2
 
@@ -95,7 +97,7 @@ document_fcns = {None: models.Document,
                  'patent': models.PatentDocument,
                  'all': models.AllDocument,
                  'deleted': models.DeletedDocument,
-			   'ids': models.get_ids_only, 
+			     'ids': models.get_ids_only,
                  'json': models.get_json_only
                  }
 
@@ -105,21 +107,23 @@ def _print_error(*args, **kwargs):
 #==============================================================================
 class API(object):
 
-    annotations : Annotations
-    definitions : Definitions
-    documents : Documents
-    files : Files
-    folders : Folders
-    trash : Trash
+    annotations : 'Annotations'
+    definitions : 'Definitions'
+    documents : 'Documents'
+    files : 'Files'
+    folders : 'Folders'
+    trash : 'Trash'
 
+    verbose : bool
     default_return_type : str
+
     #TODO: This isn't correct
     access_token : str
-
-
-    self.last_url = None
-    self.last_response = None
-    self.last_params = None
+    last_url : str
+    # TODO: This isn't correct
+    last_response : str
+    # TODO: This isn't correct
+    last_params : str
 
     """
     
@@ -127,6 +131,9 @@ class API(object):
     ----------
     default_return_type : {'object','json','raw','response'}
         This is the default type to return from methods.
+        'object' - returns a processed object
+        'json' - returns the respone parsed as json
+        'raw' - returns the response text without processing 
     verbose : bool (default False)
         
     last_response : 
@@ -134,13 +141,21 @@ class API(object):
         
     """
 
-    def __init__(self, user_name=None, verbose=False, force_reload_auth=False):
+    def __init__(self,
+                 user_name=None,
+                 verbose=False,
+                 force_reload_auth=False,
+                 default_return_type='object'):
         """
         Parameters
         ----------
-        user_name : string (default None)
+        user_name : str (default None)
             - None : then the default user is loaded via config.DefaultUser
             - 'public' : then the public API is accessed
+        verbose : str
+        force_reload_auth : bool (default False)
+            If true, the authorization is recomputed
+        default_return_type : str (default 'object')
         
         """
 
@@ -157,8 +172,7 @@ class API(object):
                                                      force_reload=force_reload_auth)
             self.user_name = token.user_name
 
-        # Options ... (I might change this ...)
-        self.default_return_type = 'object'
+        self.default_return_type = default_return_type
 
         self.access_token = token
         self.last_url = None
@@ -174,16 +188,26 @@ class API(object):
         self.trash = Trash(self)
 
     def __repr__(self):
+        #Note, we might want to
         pv = [
             'last_url',self.last_url,
             'last_response',self.last_response,
-            'last_params',"TODO: last_params",
+            'last_params',td(self.last_params),
             'public_only', self.public_only, 
-            'user_name', self.user_name]
+            'user_name', self.user_name,
+            '---','--- method props ---',
+            'annotations',cld(self.annotations),
+            'definitions',cld(self.definitions),
+            '---','--- internal ---',
+            'access_token',cld(self.access_token),
+            ]
         return utils.property_values_to_string(pv)
 
     def make_post_request(self, url, object_fh, params, response_params=None, headers=None, files=None):
 
+        """
+        asdfasdf
+        """
         #
         # http://docs.python-requests.org/en/latest/user/advanced/#streaming-uploads
 
@@ -211,14 +235,18 @@ class API(object):
 
         return self.handle_return(response, return_type, response_params, object_fh)
 
-    def make_get_request(self, url, object_fh, params, 
-                         response_params=None, headers=None):
+    def make_get_request(self,
+                         url,
+                         object_fh,
+                         params,
+                         response_params=None,
+                         headers=None):
         """
         
         Make a GET request to the server and return the response.
 
-        Parameters:
-        -----------          
+        Parameters
+        ----------
         url : str
             URL to make request from.
         object_fh: function handle
@@ -490,23 +518,27 @@ class Documents(object):
         self.parent = parent
 
     def get(self,
+            _return_type: Optional[str]=None,
             authored: Optional[bool]=None,
             deleted_since: DST=None,
             folder_id: Optional[str]=None,
             group_id: Optional[str]=None,
             include_trashed: Optional[bool]=None,
-            limit: int =20,
-            modified_since: Optional[str]=None,
-            id:Optional[str]=None):
+            limit: Optional[int] =20,
+            modified_since: DST=None,
+            order: Optional[str]=None,
+            profile_id: Optional[str]=None,
+            sort: Optional[str]=None,
+            starred: Optional[bool]=None,
+            tag: Union[List[str],str,None] = None,
+            view: Optional[str] = None):
         """
         https://api.mendeley.com/apidocs#!/documents/getDocuments
-        
+
         Parameters
         ----------
         authored : logical
             TODO
-        id :
-                ????
         group_id : string
             The id of the group that the document belongs to. If not supplied 
             returns users documents.
@@ -538,7 +570,7 @@ class Documents(object):
             - 'tags' : returns user's tags
             - 'patent'
             - 'all'
-            - 'ids'
+            - 'ids' : only get ids
         sort : string
             Field to sort on. Avaiable options:
             - 'created'
@@ -554,96 +586,102 @@ class Documents(object):
         """
 
         url = BASE_URL + '/documents'
-        if 'id' in kwargs:
-            id = kwargs.pop('id')
-            url += '/%s/' % id
-            
-        convert_datetime_to_string(kwargs, 'modified_since')
-        convert_datetime_to_string(kwargs, 'deleted_since')
 
-        view = kwargs.get('view')
-        # If no view specified, set default to 'all'
+        """
+        view: Optional[str] = None):
+        """
+
+
+
+        d = dict()
+        if _return_type is not None:
+            d['_return_type'] = _return_type
+        if authored is not None:
+            d['authored'] = authored
+        if deleted_since is not None:
+            d['deleted_since'] = deleted_since
+            convert_datetime_to_string(d, 'deleted_since')
+        if folder_id is not None:
+            d['folder_id'] = folder_id
+        if group_id is not None:
+            d['group_id'] = group_id
+        if include_trashed is not None:
+            d['include_trashed'] = include_trashed
+        if limit is not None:
+            if limit == 0:
+                #0 is code for get all
+                #we'll max out our per request size
+                #then merge below
+                limit = 500
+            d['limit'] = limit
+        if modified_since is not None:
+            d['modified_since'] = modified_since
+            convert_datetime_to_string(d, 'modified_since')
+        if order is not None:
+            d['order'] = order
+        if profile_id is not None:
+            d['profile_id'] = profile_id
+        if sort is not None:
+            d['sort'] = sort
+        if starred is not None:
+            d['starred'] = starred
+        if tag is not None:
+            d['tag'] = tag
+
+        response_doc_fcn = document_fcns[view]
+
+        if deleted_since is not None:
+            #TODO: document this more ...
+            response_view = 'deleted'
+        else:
+            response_view = view
+
         if view is None:
-            view = 'all'
+            # If no view specified, set default to 'all'
+            d['view'] = 'all'
+            response_view = 'all'
+        elif view == 'ids':
+            #No view, default of None is ok
+            #i.e. no assignment made to d[]
+            pass
+        else:
+            d['view'] = view
 
-        rp_view = view
-        rp_doc_fcn = document_fcns[view]
-
-        if view == "ids":
-            #Default view of None seems to be the shortest
-            #All we want is the ids, so send as little as possible
-            del kwargs["view"]
-        elif 'deleted_since' in kwargs:
-            #Modify returned object
-            rp_view = 'deleted'
-
-        limit = kwargs.get('limit', 20)
-        if limit == 0:
-            kwargs['limit'] = 500            
-                  
         #Most of these are reference only, except for the fcn value
         response_params = {
-        'fcn': rp_doc_fcn, 
-        'view': rp_view, 
-        'limit': limit, 
-        'page_id':0}
+            'fcn': response_doc_fcn,
+            'view': response_view,
+            'limit': limit,
+            'page_id':0
+            }
 
-        # The 'view' parameter needs to be in the params.
-        kwargs['view'] = view
-
-        verbose = _process_verbose(self.parent,kwargs,response_params)
+        verbose = _process_verbose(self.parent,d,response_params)
         if verbose:
             if limit == 0:
-                print("Requesting all documents from Mendeley with params: %s" % (kwargs))    
+                print("Requesting all documents from Mendeley with params: %s" % (d))
             else:
-                print("Requesting up to %d documents from Mendeley with params: %s" % (limit, kwargs))
+                print("Requesting up to %d documents from Mendeley with params: %s" % (limit, d))
   
-        result = self.parent.make_get_request(url, models.DocumentSet.create, kwargs, response_params)
+        result = self.parent.make_get_request(url, models.DocumentSet.create, d, response_params)
 
         if limit == 0:
             result.get_all_docs()       
         
         return result
 
-    def get_single(self, **kwargs):
+    def get_single(self, id, **kwargs):
         """
         https://api.mendeley.com/apidocs#!/documents/getDocuments
 
         Parameters
         ----------
         id :
-        group_id : string
-            The id of the group that the document belongs to. If not supplied
-            returns users documents.
-        modified_since : string or datetime
-            Returns only documents modified since this timestamp. Should be
-            supplied in ISO 8601 format.
-        deleted_since : string or datetime
-            Returns only documents deleted since this timestamp. Should be
-            supplied in ISO 8601 format.
-        profile_id : string
-            The id of the profile that the document belongs to, that does not
-            belong to any group. If not supplied returns users documents.
-        authored :
-            TODO
-        starred :
-        limit : string or int (default 20)
-            Largest allowable value is 500. This is really the page limit since
-            the iterator will allow exceeding this value.
-        order :
-            - 'asc' - sort the field in ascending order
-            ' 'desc' - sort the field in descending order
         view :
             - 'bib'
             - 'client'
             - 'tags' : returns user's tags
             - 'patent'
             - 'all'
-        sort : string
-            Field to sort on. Avaiable options:
-            - 'created'
-            - 'last_modified'
-            - 'title'
 
         Examples
         --------
@@ -654,12 +692,7 @@ class Documents(object):
         """
 
         url = BASE_URL + '/documents'
-        if 'id' in kwargs:
-            id = kwargs.pop('id')
-            url += '/%s/' % id
-
-        convert_datetime_to_string(kwargs, 'modified_since')
-        convert_datetime_to_string(kwargs, 'deleted_since')
+        url += '/%s/' % id
 
         view = kwargs.get('view')
 

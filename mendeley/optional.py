@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Handles importing of optional packages/modules. These imports are accomplished
-normally unless they are missing. In that case a MissingModule is imported that
-throws an error when you try and use it.
+Handles importing of optional packages/modules. These imports
+are accomplished normally unless they are missing. In that case
+a MissingModule is imported that throws an error when you try and use it.
 
 TODO: document all optional imports
 

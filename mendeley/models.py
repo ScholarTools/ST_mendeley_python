@@ -15,6 +15,10 @@ mendeley.api => contains the code that makes requests for these models
 
 """
 
+#Standard Imports
+from typing import Optional, Union, TypeVar, List
+
+
 #Local Imports
 from .utils import get_truncated_display_string as td
 from .utils import get_list_class_display as cld
@@ -313,6 +317,8 @@ class DocumentSet(object):
     Responsible for managing a set of documents.
     """
 
+    view : Optional[str]
+
     def __init__(self, json, m, params):
         """
         Parameters
@@ -325,7 +331,6 @@ class DocumentSet(object):
             'limit' - maximum # of documents to expect
         
         """
-        # TODO: build in next and prev support
         self.links = m.last_response.links
         self.api = m
         self.response_params = params
@@ -336,7 +341,6 @@ class DocumentSet(object):
         fcn = params['fcn']
 
         # TODO: Figure out how to support lazy loading
-        # TODO: Support view construction
         self.docs = [fcn(x, m) for x in json]
         self.view = params['view']
 
@@ -358,9 +362,19 @@ class DocumentSet(object):
     @classmethod
     def create(cls, json, m, params):
         """
-        This is the entry point for the get document request response. It was created
-        to allow returning a DocumentSet for an array of values, or just
-        the document itself if a specific document was requested.
+        This is the entry point for the get document request response. It
+        was created to allow returning a DocumentSet for an array of values,
+        or just the document itself if a specific document was requested.
+
+        Parameters
+        ----------
+        json :
+        m : mendeley.api.API
+        params :
+
+        See Also
+        --------
+        mendeley.api.Documents.get()
         """
 
         if isinstance(json, list):
@@ -376,7 +390,6 @@ class DocumentSet(object):
         #TODO: Make sure we are on first page, if not go there
         docs = [x for x in self]
         self.docs = docs
-
 
     def first_page(self):
         #TODO: Implement this function
@@ -403,7 +416,7 @@ class DocumentSet(object):
         pass
 
     def last_page(self):
-        #This is not yet implemented because the pages are not numbereds
+        #This is not yet implemented because the pages are not numbered
         pass
         
         """
@@ -418,13 +431,17 @@ class DocumentSet(object):
             next_url = self.links['last']['url']
             return self.api.make_get_request(next_url, DocumentSet, None, self.response_params)
         """
- 
 
     def __repr__(self):
         pv = [
         'links', self.links.keys(), 
         'docs', cld(self.docs), 
-        'view', self.view]
+        'view', self.view,
+        '-----','---  internal ---',
+        'api',cld(self.api),
+        'verbose',self.verbose,
+        'page_id',self.page_id,
+        'json','<json>']
         return utils.property_values_to_string(pv)
 
 
