@@ -608,9 +608,20 @@ class Document(ResponseObject):
 
     @classmethod
     def fields(cls):
-        return ['source', 'year', 'identifiers', 'id', 'type', 'created',
-                'profile_id', 'last_modified', 'title', 'authors', 'keywords',
-                'abstract', 'tags', 'doi', 'notes']
+        return ['source',
+                'year',
+                'identifiers',
+                'id', 'type',
+                'created',
+                'profile_id',
+                'last_modified',
+                'title',
+                'authors',
+                'keywords',
+                'abstract',
+                'tags',
+                'doi',
+                'notes']
 
     @classmethod
     def create(cls, json, m, params):
@@ -667,6 +678,8 @@ class Document(ResponseObject):
 
     def add_all_references(self):
 
+        #TODO: This needs to be documented ...
+
         info = rr.resolve_doi(self.doi)
 
         refs = info.references
@@ -702,24 +715,17 @@ class Document(ResponseObject):
         pass
 
     def __repr__(self, pv_only=False):
-        # TODO: Set this up like it looks in Mendeley
-        pv = ['profile_id: ', self.profile_id,
-              'created: ', self.created,
-              'last_modified: ', self.last_modified,
-              'id: ', self.id,
-              'type: ', self.type,
-              'title: ', td(self.title),
-              'tags: ', self.tags,
-              'authors: ', cld(self.authors),
-              'source: ', self.source,
-              'year: ', self.year,
-              'doi: ', self.doi,
-              'doc_id: ', self.doc_id,
-              'doc_location: ', self.doc_location,
-              'abstract: ', td(self.abstract),
-              'keywords: ', td("%s" % self.keywords),
-              'identifiers: ', cld(self.identifiers),
-              'notes: ', self.notes]
+        data = self.json
+        pv = []
+        for key,value in data.items():
+            if isinstance(value, str) or isinstance(value,list) \
+                    or isinstance(value,dict):
+                pv.extend([key,td(str(value))])
+            elif isinstance(value, int):
+                pv.extend([key, value])
+            else:
+                pv.extend([key, cld(value)])
+
         if pv_only:
             return pv
         else:

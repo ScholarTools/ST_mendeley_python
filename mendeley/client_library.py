@@ -47,7 +47,7 @@ from . import config
 #-----------------------------
 from .optional import rr
 from .optional import pdf_retrieval
-from . import db_interface
+#from . import db_interface
 # from . import archive_library
 
 fstr = utils.float_or_none_to_string
@@ -70,9 +70,6 @@ class UserLibrary:
         Name of the user to process. FORMAT????
     verbose : bool
         Whether or not to print out verbose messages.
-    raw : [dict]
-        Each dictionay contains a json entry for a document. This contains
-        the document exactly as returned from the Mendeley server.
     sync_result : Sync or None
         This is used for mainly for debugging.
     
