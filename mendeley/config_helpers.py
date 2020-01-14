@@ -183,7 +183,60 @@ class Config(object):
             #TODO - we should really be checking in those constructors ...
             #for valid data
             pass
-            
+
+    def get_save_root(self, sub_directories_list=None,
+                      create_folder_if_no_exist=True):
+        """
+        This function returns the location of the folder in which to save data
+        for a given calling function.
+
+
+        Save Location
+        ----------------
+        The default save location is:
+            <repo root>/data
+
+        Override in user_config via:
+            default_save_path = "this/is/my/path"
+
+        Parameters
+        ----------
+        sub_directories_list : string or list
+        create_folder_if_no_exist : boolean
+
+        Examples
+        --------
+        config.get_save_root(['credentials'],True)
+        root_path = config.get_save_root(['client_library'], True)
+
+        """
+        if sub_directories_list is None:
+            sub_directories_list = []
+        elif not isinstance(sub_directories_list, list):
+            # Assume string, normally I would check for a string but apparently this
+            # is a bit quirky with Python 2 vs 3
+            sub_directories_list = [sub_directories_list]
+
+        if getattr(self, 'default_save_path', None) is not None:
+            root_path = self.default_save_path
+            if not os.path.isdir(root_path):
+                raise Exception('Specified default save path does not exist')
+        else:
+            # http://stackoverflow.com/questions/50499/in-python-how-do-i-get-the-path-and-name-of-the-file-that-is-currently-executin/50905#50905
+            package_path = os.path.dirname(
+                os.path.abspath(inspect.getfile(inspect.currentframe())))
+
+            # Go up to root, then down to specific save path
+            root_path = os.path.split(package_path)[0]
+            root_path = os.path.join(root_path, 'data')
+
+        save_folder_path = os.path.join(root_path, *sub_directories_list)
+
+        if create_folder_if_no_exist and not os.path.exists(save_folder_path):
+            os.makedirs(save_folder_path)
+
+        return save_folder_path
+
 
     def __repr__(self):
         pv = ['Oauth2Credentials', cld(self.Oauth2Credentials), 
@@ -271,54 +324,3 @@ class User(object):
 
 #JAH: This calls into the config and is the only function to do so
 #I think this would be better in the config itself ...
-def get_save_root(sub_directories_list=None, create_folder_if_no_exist=True):
-    """
-    This function returns the location of the folder in which to save data
-    for a given calling function.
-    
-       
-    Save Location
-    ----------------
-    The default save location is:
-        <repo root>/data
-    
-    Override in user_config via:
-        default_save_path = "this/is/my/path"
-    
-    Parameters
-    ----------
-    sub_directories_list : string or list
-    create_folder_if_no_exist : boolean
-    
-    Examples
-    --------
-    utils.get_save_root(['credentials'],True)
-    root_path = utils.get_save_root(['client_library'], True)    
-    
-    """
-    config = Config()
-    if sub_directories_list is None:
-        sub_directories_list = []
-    elif not isinstance(sub_directories_list, list):
-        # Assume string, normally I would check for a string but apparently this
-        # is a bit quirky with Python 2 vs 3
-        sub_directories_list = [sub_directories_list]
-
-    if getattr(config, 'default_save_path', None) is not None:
-        root_path = config.default_save_path
-        if not os.path.isdir(root_path):
-            raise Exception('Specified default save path does not exist')
-    else:
-        # http://stackoverflow.com/questions/50499/in-python-how-do-i-get-the-path-and-name-of-the-file-that-is-currently-executin/50905#50905
-        package_path = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-
-        # Go up to root, then down to specific save path
-        root_path = os.path.split(package_path)[0]
-        root_path = os.path.join(root_path, 'data')
-
-    save_folder_path = os.path.join(root_path, *sub_directories_list)
-
-    if create_folder_if_no_exist and not os.path.exists(save_folder_path):
-        os.makedirs(save_folder_path)
-
-    return save_folder_path

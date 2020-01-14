@@ -1,8 +1,14 @@
 
+#Standard
+import os
 
-from sqlalchemy import Column, String, Integer, create_engine
+
+#Third-Party
+from sqlalchemy.orm import relationship, sessionmaker
+from sqlalchemy.orm.session import Session
+from sqlalchemy import Column, String, Integer, Boolean, ForeignKey, BigInteger
+from sqlalchemy import PrimaryKeyConstraint
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
 
 
@@ -11,14 +17,14 @@ from sqlalchemy import create_engine
 #- Keywords
 #- Tags
 
-Base = declarative_base()
-
 #Local Imports
 #-------------------
 from . import config
+from . import utils
 
 
-engine = create_engine('sqlite:///:memory:', echo=True)
+Base = declarative_base()
+
 
 #Tables
 #--------------------------------------------------
@@ -40,8 +46,21 @@ class DB():
         save_name = utils.user_name_to_file_name(self.user_name) + '.sqlite'
         self.file_path = os.path.join(root_path, save_name)
         self.engine = create_engine('sqlite:///' + self.file_path)
+        Base.metadata.create_all(bind=self.engine)
 
-    def get_session(self):
+    def add_documents(self,data):
+        #TODO: What if we have a conflict?
+        session = self.get_session()
+        for i, doc in enumerate(data):
+            print('doc %d' % i)
+            temp = Document(doc)
+            #TODO: What if this throws an error?
+            session.add(temp)
+
+        session.commit()
+        session.close()
+
+    def get_session(self) -> Session:
         Session = sessionmaker()
         Session.configure(bind=self.engine)
         session = Session()
@@ -50,31 +69,33 @@ class DB():
 class DocumentContributors(Base):
     __tablename__ = 'DocumentContributors'
 
-    id = Column(Integer, primary_key=True)
-    documentId = Column(Integer, ForeignKey('Documents.id'), nullable=False)
+    doc_id = Column(Integer, ForeignKey('Documents.local_id'), nullable=False)
     contribution = Column(String, nullable=False)
+
     #Known contributor roles:
     #Authors - 'DocumentAuthor'
     #Editors - 'DocumentEditor'
     #Reporters -
     #
-
-
-    firstNames = Column(String)
-    lastName = Column(String)
+    first_name = Column(String,default="")
+    last_name = Column(String)
+    __table_args__ = (PrimaryKeyConstraint('doc_id', 'contribution',
+                                           'first_name', 'last_name'),)
+    #scopus_author_id = Column(String)
 
     def __init__(self,contribution,data):
         """
-
-
         :param contribution: Depends on where entered but may be an an author
         or editor or any other person/role associated with the doc
         :param data: Dictionary containing first and last name
         :type data: dict
         """
         self.contribution = contribution
-        self.firstNames = data['first_name']
-        self.lastName = data['last_name']
+        #Apparently this is not always present ...
+        if 'first_name' in data:
+            self.first_name = data['first_name']
+
+        self.last_name = data['last_name']
 
 
 #DocumentDetailsBase #7749
@@ -82,24 +103,29 @@ class DocumentContributors(Base):
 #                           Where is this used????
 
 #DocumentFiles
+"""
 class DocumentFiles(Base):
     __tablename__ = 'DocumentFiles'
 
-    documentId = Column(Integer, ForeignKey('Documents.id'), nullable=False)
+    doc_id = Column(Integer, ForeignKey('Documents.local_id'), nullable=False)
     hash = Column(String(40), nullable=False, index=True),
     unlinked = Column(Boolean, nullable=False),
-    downloadRestricted = Column(Boolean, nullable=False, default=False)
-    remoteFileUuid = Column(String(38),nullable=False,default=u"")
+    download_restricted = Column(Boolean, nullable=False, default=False)
+    remote_fil_uuid = Column(String(38),nullable=False,default=u"")
+"""
 
 #DocumentFolders - doc id, folder id, status????
 #DocumentFoldersBase - doc id, folder id
 
 #Document Keywords
-class DocumentKeywords(Base_Internal):
+class DocumentKeywords(Base):
     __tablename__ = 'DocumentKeywords'
 
-    documentId = Column(Integer, ForeignKey('Documents.id'), nullable=False)
-    keyword = Column(String, primary_key=True, nullable=False)
+    doc_id = Column(Integer, ForeignKey('Documents.local_id'), nullable=False)
+    keyword = Column(String, nullable=False)
+    __table_args__ = (PrimaryKeyConstraint('doc_id', 'keyword'),)
+    def __init__(self,value):
+        self.keyword = value
 
 #DocumentNotes  #empty
 #DocumentReferences #empty
@@ -107,15 +133,22 @@ class DocumentKeywords(Base_Internal):
 class DocumentTags(Base):
     __tablename__ = 'DocumentTags'
 
-    documentId = Column(Integer, ForeignKey('Documents.id'), nullable=False)
-    tag = Column(String, primary_key=True, nullable=False)
+    doc_id = Column(Integer, ForeignKey('Documents.local_id'), nullable=False)
+    tag = Column(String, nullable=False)
+    __table_args__ = (PrimaryKeyConstraint('doc_id', 'tag'),)
+
+    def __init__(self,value):
+        self.tag = value
 
 class DocumentUrls(Base):
     __tablename__ = 'DocumentUrls'
 
-    documentId = Column(Integer, ForeignKey('Documents.id'), nullable=False)
-    position = Column(Integer, primary_key=True, nullable=False)
+    doc_id = Column(Integer, ForeignKey('Documents.local_id'), nullable=False)
     url = Column(String, nullable=False)
+    __table_args__ = (PrimaryKeyConstraint('doc_id', 'url'),)
+
+    def __init__(self,value):
+        self.url = value
 
 #DocumentVersion???
 #       - this is a timestamp - of what?????
@@ -124,124 +157,143 @@ class DocumentUrls(Base):
 
 #DocumentZotero - empty
 
+class FolderUUIDs(Base):
+    __tablename__ = 'FolderUUIDs'
+
+    folder_uuid = Column(String(36))
+    doc_id = Column(Integer, ForeignKey('Documents.local_id'), nullable=False)
+    __table_args__ = (PrimaryKeyConstraint('doc_id', 'folder_uuid'),)
+
+    def __init__(self,value):
+        self.folder_uuid = value
+
 class Document(Base):
     __tablename__ = 'Documents'
 
-    contributors = relationship('DocumentContributors', cascade="all, delete-orphan")
-    #Not sure how this should be handled ...
-    #- If we don't download files, but only know that they exist ...
-    files = relationship('DocumentFiles', cascade="all, delete-orphan")
-    keywords = relationship('DocumentKeywords', cascade="all, delete-orphan")
-    tags = relationship('DocumentTags', cascade="all, delete-orphan")
-    urls = relationship('DocumentUrls', cascade="all, delete-orphan")
+    # https://dev.mendeley.com/methods/#core-document-attributes
+    #This is more recent and seems right
+    #https: // api.mendeley.com / apidocs / docs  # !/documents/getDocuments
 
-    #Renames and Actions
-    #-------------------
-    #identifiers - need to move up to main
-    #authors - TO 'contributors'
-    #source - 'publication'
-    #websites - TO 'urls'
-    #created - 'added'
-    #file_attached??? - not present
-    #   - store
-    #profile_id - add
-    #last_modified => 'lastUpdate'
-    #tags => TO 'tags'
-    #
+    #Core Attributes
+    #-------------------------------------
+    #From:
 
+    local_id = Column(Integer, primary_key=True)
 
-    #???? keywords - how to push to list?
-    #
-
-
-    abstract = Column(String)
-    added = Column(Integer)
-    advisor = Column(String)
-    applicationNumber = Column(String)
-    articleColumn = Column(String)
-    arxivId = Column(String)
-    chapter = Column(String)
-    citationKey = Column(String)
-    city = Column(String)
-    code = Column(String)
-    codeNumber = Column(String)
-    codeSection = Column(String)
-    codeVolume = Column(String)
-    committee = Column(String)
-    confirmed = Column(Integer) #???? What is this, true or false
-    #Looks like it is false when deletion is pending
-
-    counsel = Column(String)
-    country = Column(String)
-    dateAccessed = Column(String)
-    #I think this may be when last read ???
+    abstract = Column(String(10000))
+    accessed = Column(String)
+    arxiv = Column(String)
+    authored = Column(Boolean)
+    authors = relationship('DocumentContributors', cascade="all, delete-orphan")
+    chapter = Column(String(10))
+    citation_key = Column(String(255))
+    city = Column(String(255))
+    code = Column(String(255))
+    confirmed = Column(Boolean)
+    country = Column(String(255))
+    created = Column(String)
     day = Column(Integer)
-    deduplicated = Column(Integer)
-    deletionPending = Column(Integer)
-    department = Column(String)
+    department = Column(String(255))
     doi = Column(String)
     edition = Column(String)
-    favourite = Column(Integer)
-    genre = Column(String)
-    hideFromMendeleyWebIndex = Column(Integer)
-    id = Column(Integer, primary_key=True)
-    importer = Column(String)
-    #ManualImporter
-    #PDFImporter
-    #UnkknowImporter
-    institution = Column(String)
-    internationalAuthor = Column(String)
-    internationalNumber = Column(String)
-    internationalTitle = Column(String)
-    internationalUserType = Column(String)
+    editors = relationship('DocumentContributors', cascade="all, delete-orphan")
+    file_attached = Column(Boolean)
+    folder_uuids = relationship('FolderUUIDs', cascade="all, delete-orphan")
+    genre = Column(String(255))
+    group_id = Column(String)
+    hidden = Column(Boolean)
+    id = Column(String, nullable=False, unique=True)  # unique
+    institution = Column(String(255))
     isbn = Column(String)
     issn = Column(String)
-    issue = Column(String)
-    language = Column(String)
-    lastUpdate = Column(String)
-    #All null in my DB
-
-    legalStatus = Column(String)
-    length = Column(String)
+    issue = Column(String(255))
+    keywords = relationship('DocumentKeywords', cascade="all, delete-orphan")
+    language = Column(String(255))
+    last_modified = Column(String)
     medium = Column(String)
-    modified = Column(Integer)
     month = Column(Integer)
-    note = Column(String)
-    originalPublication = Column(String)
-    #all null
-
-    owner = Column(String)
-    pages = Column(String)
+    notes = Column(String)
+    pages = Column(String(50))
+    patent_application_number = Column(String(255))
+    patent_legal_status = Column(String(255))
+    patent_owner = Column(String(255))
     pmid = Column(BigInteger)
-    privacy = Column(String)
-    #PublishedDocument - when one of my publications
-    #NormalDocument
-    publicLawNumber = Column(String)
-    publication = Column(String)
-    publisher = Column(String)
-    read = Column(Integer)
-    reprintEdition = Column(String)
-    revisionNumber = Column(String)
-    reviewedArticle = Column(String)
-    sections = Column(String)
-    series = Column(String)
-    seriesEditor = Column(String)
-    seriesNumber = Column(String)
-    session = Column(String)
-    shortTitle = Column(String)
-    sourceType = Column(String)
-    #Perhaps the original type????
-
-    title = Column(String)
-    type = Column(String) #Journal, Book Section, etc.
-    uuid = Column(String, nullable=False)  # unique
-    userType = Column(String)
-    #thesis (only 1 row has this, all others null)
-    volume = Column(String)
+    private_publication = Column(Boolean)
+    profile_id = Column(String)
+    publisher = Column(String(255))
+    read = Column(Boolean)
+    reprint_edition = Column(String(10))
+    revision = Column(String(255))
+    scopus = Column(String)
+    series = Column(String(255))
+    series_editor = Column(String(255))
+    series_number = Column(String(255))
+    short_title = Column(String(50))
+    source = Column(String(255))
+    source_type = Column(String(255))
+    ssrn = Column(String)
+    starred = Column(Boolean)
+    tags = relationship('DocumentTags', cascade="all, delete-orphan")
+    title = Column(String(255))
+    translators = relationship('DocumentContributors', cascade="all, delete-orphan")
+    type = Column(String)  # Journal, Book Section, etc.
+    user_context = Column(String(255))
+    volume = Column(String(10))
+    websites = relationship('DocumentUrls', cascade="all, delete-orphan")
     year = Column(Integer)
 
-    def __init__(self,data):
-        pass
+
+    #Jim Entries
+    is_dirty = Column(Boolean,default=False)
+
+    def __init__(self,data: dict):
+        #bill
+        #case
+        #computer_program
+
+        #pop identifiers
+        #
+        #authors
+        #
+        cls_ = type(self)
+        for k,v in data.items():
+            if not hasattr(cls_, k):
+                if k == 'identifiers':
+                    ids = data['identifiers']
+                    for k2 in ids:
+                        #Perhaps compare to known identifiers instead ...
+                        #Not sure of speed of hasattr vs 'in' on smaller set
+                        if hasattr(cls_, k2):
+                            setattr(self, k2, ids[k2])
+                        else:
+                            raise TypeError(
+                                "%r is an invalid keyword argument for %s" % (
+                                    k2, cls_.__name__)
+                            )
+                else:
+                    import pdb
+                    pdb.set_trace()
+                    raise TypeError(
+                        "%r is an invalid keyword argument for %s" % (
+                        k, cls_.__name__)
+                    )
+            elif k == 'authors':
+                self.authors = [DocumentContributors('authors', x) for x in data[k]]
+            elif k == 'editors':
+                self.editors = [DocumentContributors('editors', x) for x in data[k]]
+            elif k == 'translators':
+                self.translators = [DocumentContributors('translators',x) for x in data[k]]
+            elif k == 'tags':
+                self.tags = [DocumentTags(x) for x in data[k]]
+            elif k == 'keywords':
+                self.keywords = [DocumentKeywords(x) for x in data[k]]
+            elif k == 'websites':
+                self.websites = [DocumentUrls(x) for x in data[k]]
+            elif k == 'folder_uuids':
+                self.folder_uuids = [FolderUUIDs(x) for x in data[k]]
+            else:
+                setattr(self, k, data[k])
+
 
 
 
@@ -300,3 +352,5 @@ class Document(Base):
 """
 
 #TODO: Indices
+
+
