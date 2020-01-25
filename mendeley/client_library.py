@@ -3,6 +3,20 @@
 The goal of this code is to support hosting a client library. This module
 should in the end function similarly to the Mendeley Desktop.
 
+
+
+Jim's next goals
+----------------
+1) Handle deleted IDs - needs an API update
+2) Meta Data Editor
+    - nice query interface
+    - needs to handle local/dirty docs
+    - autodownload files when opening ...
+3) Update by PMID ...
+
+
+
+
 Features
 --------
 1) Initializes a representation of the documents stored in a user's library
@@ -11,16 +25,8 @@ Features
 Usage
 -----
 from mendeley import client_library
-temp = client_library.UserLibrary(verbose=True)
-
-
-Library dataframe properties
-----------------------------
-1) All doi are stored as lower
-- how are DOI stored?????
-- For example we could have doi.dx.org/10.17 or whatever
-- Need to store the minimum canonical DOI
-
+cl = client_library.UserLibrary(verbose=True)
+wtf = cl.has_docs([14581232,10529706,12345])
 
 
 """
@@ -35,6 +41,8 @@ import json
 
 #Third Party Imports
 import pandas as pd
+from sqlalchemy import desc
+
 
 # Local imports
 from .api import API
@@ -42,6 +50,8 @@ from . import errors
 from . import models
 from . import utils
 from . import config
+from . import db_tables as db
+from .db_tables import DB
 
 # Optional Local Imports
 #-----------------------------
@@ -101,30 +111,53 @@ class UserLibrary:
         save_name = utils.user_name_to_file_name(self.user_name) + '.pickle'
         self.file_path = os.path.join(root_path, save_name)
 
-        self._load(force_new)
+        self.db = db.DB(self.user_name)
+
+        #TODO:
+        #self._load(force_new)
 
         if sync:
-            self.sync()
+            #self, api:API, db:DB, verbose=False
+            self.sync_result = Sync(self.api,self.db,self.verbose)
         else:
             self.sync_result = None
 
     def __repr__(self):
-        if self.db_session is None:
-            db_text = 'DB not loaded, repo ST_library_db missing'
-        else:
-            db_text = cld(self.db_session)
-            
+
         pv = ['api',        cld(self.api),
-              'db_session', db_text,
+              'db',         cld(self.db),
               'dirty_db',   self.dirty_db,
               'user_name',  self.user_name,
-              'docs',       cld(self.docs),
               'file_path',  self.file_path,
-              'raw',        cld(self.raw),
-              'sync_result', cld(self.sync_result),
+              'sync_result',cld(self.sync_result),
               'verbose',    self.verbose]
         
         return utils.property_values_to_string(pv)
+
+    def has_docs(self,ids,type='pmid'):
+        """
+
+
+        :param ids:
+        :param type:
+        :return:
+        """
+
+        output = []
+        session = self.db.get_session()
+        if type == 'pmid':
+            for id in ids:
+                temp = session.query(self.db.Document.pmid).filter_by(pmid = id).first()
+                output.append(bool(temp))
+            pass
+        elif type =='doi':
+            pass
+        elif type == 'arxiv':
+            pass
+        else:
+            raise Exception('Unrecognized id type')
+
+        return output
 
     def sync(self,verbose=None):
         """
@@ -146,11 +179,8 @@ class UserLibrary:
         if verbose is None:
             verbose = self.verbose
 
-        sync_result = Sync(self.api, self.raw, verbose=verbose)
+        sync_result = Sync(self.api, self.db, verbose=verbose)
         self.sync_result = sync_result
-        self.raw = sync_result.raw
-        self.docs = sync_result.docs
-        self._save()
 
     # def archive(self):
     #     archivist = archive_library.Archivist(library=self, api=self.api)
@@ -572,42 +602,6 @@ class UserLibrary:
 
         return entry
 
-    def _load(self):
-        
-        # TODO: Check that the file is not empty ...
-        if os.path.isfile(self.file_path):
-            with open(self.file_path, 'rb') as pickle_file:
-                d = pickle.load(pickle_file)
-
-            self.raw = d['raw']
-            self.docs = _raw_to_data_frame(self.raw)
-            self.dirty_db = d.get("dirty_db",True)
-            
-            if db_interface.db_available:
-                self.db_session = db_interface.DBSessionInterface(self.user_name)
-                if self.dirty_db:
-                    #TODO: Fix it
-                    #self.dirty_db = False
-                    pass
-            else:
-                self.db_session = None
-
-        else:
-            #Initialze defaults ...
-            self.db_session = None
-            self.raw = None
-            self.docs = None
-
-    def _save(self):
-        d = dict()
-        d['file_version'] = self.FILE_VERSION
-        d['raw'] = self.raw
-        d['dirty_db'] = self.dirty_db
-        # d['raw_trash'] = self.raw_trash
-        with open(self.file_path, 'wb') as pickle_file:
-            pickle.dump(d, pickle_file)
-
-
 class Sync(object):
     """
     This object should perform the syncing and include some 
@@ -617,31 +611,10 @@ class Sync(object):
     ----------
     raw : json
     df : 
-    
-    
-    deleted_ids
-    trash_ids
-    new_and_updated_docs
-    n_docs_removed
-    newest_modified_time
-    
-        ---- Times ----
-    full_retrieval_time    
-    
-    
-    
-    time_deleted_check
-    time_full_retrieval
-    time_modified_check
-    time_modified_processing
-    time_trash_retrieval
-    time_update_sync
-    
-    #TODO: Update with other attributes in this class
-    
+
     """
 
-    def __init__(self, api, db_session, raw_json, verbose=False):
+    def __init__(self, api:API, db:DB, verbose=False):
         """
         
         Inputs
@@ -651,48 +624,59 @@ class Sync(object):
             
         """
         
-        self.db_session = db_session
-        
-        self.time_full_retrieval = None
-        self.time_deleted_check = None
-        self.time_trash_retrieval = None
-        self.time_modified_check = None
-        self.time_modified_processing = None
-        self.newest_modified_time = None
-        self.n_docs_removed = 0
-
-        self.time_update_sync = None
-
+        self.db = db
         self.api = api
         self.verbose = verbose
 
-        self.raw_json = raw_json
+        self.verbose_print("Starting sync")
 
-        # Populated_values
-        # -----------------
-        self.deleted_ids = None
-        self.trash_ids = None
-        self.new_and_updated_docs = None
+        #What happens to trashed documents?
+        #- we can request trahsed documents ...
 
-        if self.raw is None:
-            self.full_sync()
-        else:
-            self.update_sync()
+        #There is no notification that a document has been trashed ...
+        #- we need to request trashed documents ...
+
+        #deleted_since
+
+
+        session = db.get_session()
+        last_modified =  session.query(db.Document.last_modified).order_by(desc('last_modified')).first()
+
+        dirty_docs = session.query(db.Document).filter_by(is_dirty=True).all()
+        if dirty_docs:
+            pass
+            #I think we'll want to resolve these first, then
+
+        new_docs = api.documents.get(modified_since=last_modified,limit=100,return_type='json')
+        count = 0
+
+        self.ids_new = []
+        self.ids_modified = []
+        temp = db.add_documents(new_docs)
+        self.ids_new.extend(temp['new'])
+        self.ids_modified.extend(temp['modified'])
+
+        while api.has_next_link:
+            count += 100
+            print("Adding more docs starting at %d" % count)
+            docs_to_add = api.next()
+            temp = db.add_documents(docs_to_add)
+            self.ids_new.extend(temp['new'])
+            self.ids_modified.extend(temp['modified'])
+
+
+        self.verbose_print("Sync completed")
+        #trashed_docs = api.trash.get()
+
 
     def __repr__(self):
-        pv = ['raw_json', cld(self.raw_json), 
-            'dataframe', cld(self.dataframe),
-            'time_full_retrieval', fstr(self.time_full_retrieval),
-            'time_update_sync', fstr(self.time_update_sync),
-            'newest_modified_time', self.newest_modified_time,
-            'time_deleted_check', fstr(self.time_deleted_check),
-            'time_trash_retrieval', fstr(self.time_trash_retrieval),
-            'time_modified_check', fstr(self.time_modified_check),
-            'time_modified_processing', fstr(self.time_modified_processing),
-            'deleted_ids', cld(self.deleted_ids),
-            'trash_ids', cld(self.trash_ids),
-            'n_docs_removed', '%d' % self.n_docs_removed,
-            'new_and_updated_docs', cld(self.new_and_updated_docs)]
+        new_str = 'list length: %d' % len(self.ids_new)
+        modified_str = 'list length: %d' % len(self.ids_modified)
+        pv = ['api', cld(self.api),
+              'db', cld(self.db),
+              'ids_new',new_str,
+              'ids_modified',modified_str,
+              'verbose',self.verbose]
 
         return utils.property_values_to_string(pv)
 

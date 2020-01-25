@@ -80,7 +80,8 @@ if PY2:
 else:
     from urllib.parse import quote as urllib_quote
 
-BASE_URL = 'https://api.mendeley.com'
+BASE_URL = "https://api.mendeley.com"
+STR_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 
 # For each view, specify which object type should be returned
 catalog_fcns = {None: models.CatalogDocument,
@@ -118,6 +119,7 @@ class API(object):
     default_return_type : str
 
     #TODO: This isn't correct
+    #_UserAuthorization
     access_token : str
     last_url : str
     # TODO: This isn't correct
@@ -178,6 +180,11 @@ class API(object):
         self.last_url = None
         self.last_response = None
         self.last_params = None
+        self.last_response_params = None
+        self.last_object_fh = None
+        self.last_return_type = None
+        self.last_headers = None
+
 
         #TODO: Eventually I'd like to trim this based on user vs public
         self.annotations = Annotations(self)
@@ -187,6 +194,57 @@ class API(object):
         self.folders = Folders(self)
         self.trash = Trash(self)
 
+    def convert_datetime_to_string(self,dt):
+        #TODO: make format string a module variable
+        return dt.strftime(STR_FORMAT)
+
+    @property
+    def has_first_link(self):
+        lr = self.last_response
+        return hasattr(lr,'links') and 'first' in lr.links
+
+    @property
+    def has_next_link(self):
+        lr = self.last_response
+        return hasattr(lr,'links') and 'next' in lr.links
+
+    def next(self):
+
+        if not self.has_next_link:
+            raise Exception('Next page does not exist')
+
+        next_url = self.last_response.links['next']['url']
+        params = {'return_type':self.last_return_type}
+        return self.make_get_request(next_url,
+                                     self.last_object_fh,
+                                     params,
+                                     self.last_response_params,
+                                     self.last_headers)
+
+    @property
+    def has_prev_link(self):
+        lr = self.last_response
+        return hasattr(lr,'links') and 'prev' in lr.links
+
+    def prev(self):
+
+        if not self.has_prev_link:
+            raise Exception('Next page does not exist')
+
+        prev_url = self.last_response.links['prev']['url']
+        params = {'return_type': self.last_return_type}
+        return self.make_get_request(prev_url,
+                                     self.last_object_fh,
+                                     params,
+                                     self.last_response_params,
+                                     self.last_headers)
+
+
+    @property
+    def has_last_link(self):
+        lr = self.last_response
+        return hasattr(lr,'links') and 'last' in lr.links
+
     def __repr__(self):
         #Note, we might want to
         pv = [
@@ -195,6 +253,10 @@ class API(object):
             'last_params',td(self.last_params),
             'public_only', self.public_only, 
             'user_name', self.user_name,
+            'has_first_link',self.has_first_link,
+            'has_next_link',self.has_next_link,
+            'has_prev_link', self.has_prev_link,
+            'has_last_link', self.has_last_link,
             '---','--- method props ---',
             'annotations',cld(self.annotations),
             'definitions',cld(self.definitions),
@@ -203,16 +265,31 @@ class API(object):
             ]
         return utils.property_values_to_string(pv)
 
-    def make_post_request(self, url, object_fh, params, response_params=None, headers=None, files=None):
+    def make_post_request(self,
+                          url,
+                          object_fh,
+                          params,
+                          response_params=None,
+                          headers=None,
+                          files=None):
 
         """
-        asdfasdf
+        Parameters
+        ----------
+        params : dict
+            These are the parameters of the post request
+        response_params :
+            Parameters that are passed to the response object
+            TODO: What are these?????
+        headers :
+
+
         """
         #
         # http://docs.python-requests.org/en/latest/user/advanced/#streaming-uploads
 
         if params is not None:
-            return_type = params.pop('_return_type', self.default_return_type)
+            return_type = params.pop('return_type', self.default_return_type)
         else:
             return_type = self.default_return_type
 
@@ -220,12 +297,15 @@ class API(object):
             params = json.dumps(params)
 
         #TODO: Why is this not like GET with a possible connection error?
-        response = self.s.post(url, data=params, auth=self.access_token, headers=headers, files=files)
+        response = self.s.post(url, data=params, auth=self.access_token,
+                               headers=headers, files=files)
 
-    
         self.last_url = url
         self.last_response = response
         self.last_params = params
+        self.last_object_fh = object_fh
+        self.last_return_type = return_type
+        self.last_headers = headers
 
         if not response.ok:
             print(response.text)
@@ -250,13 +330,10 @@ class API(object):
         url : str
             URL to make request from.
         object_fh: function handle
-
+            This is the object to instantiate and return to the user
         params : dict (default {})
             Dictionary of parameters to place in the GET query. Values may be
             numbers or strings.
-        good_status : int (default 200)
-            The status to check for as to whether or not the request 
-            was successful.
         return_type : {'object','json','raw','response'}
             object - indicates that the result class object should be created.
                 This is the slowest option but provides the most functionality.
@@ -268,7 +345,7 @@ class API(object):
         .auth.PublicCredentials.__call__()
         """
 
-        # TODO: extract good_status = 200, return_type = None from params
+        # TODO: extract good_status = 200
 
         if params is None:
             params = {}
@@ -278,19 +355,7 @@ class API(object):
             else:
                 params = dict((k, v) for k, v in params.items() if v)
 
-        return_type = params.pop('_return_type', self.default_return_type)
-
-        """
-        JAH: I'm not sure what this is ...
-        # Each dev token is only good for 90 days
-        # https://development-tokens.mendeley.com/
-        dev_token = user_config.dev_token
-
-        if headers is None:
-            headers = {'Development-Token': dev_token}
-        else:
-            headers['Development-Token'] = dev_token
-        """
+        return_type = params.pop('return_type', self.default_return_type)
 
         # NOTE: We make authorization go through the access token. The request
         # will call the access_token prior to sending the request. Specifically
@@ -299,12 +364,16 @@ class API(object):
             resp = self.s.get(url, params=params, auth=self.access_token, 
                               headers=headers)
         except ConnectionError:
-            raise Exception('Failed to connect to the server, this usually happens'
-                            'if there is no internet connection')
+            raise Exception('Failed to connect to the server, this usually'
+                            'happens if there is no internet connection')
 
         self.last_url = url
         self.last_response = resp
         self.last_params = params
+        self.last_response_params = response_params
+        self.last_object_fh = object_fh
+        self.last_return_type = return_type
+        self.last_headers = headers
 
         if not resp.ok:
             _print_error("----------------   Error Details   ----------------")
@@ -323,7 +392,7 @@ class API(object):
         # http://docs.python-requests.org/en/latest/user/advanced/#streaming-uploads
 
         if params is not None:
-            return_type = params.pop('_return_type', self.default_return_type)
+            return_type = params.pop('return_type', self.default_return_type)
         else:
             return_type = self.default_return_type
 
@@ -331,6 +400,13 @@ class API(object):
             params = json.dumps(params)
 
         resp = self.s.patch(url, data=params, auth=self.access_token, headers=headers, files=files)
+
+        self.last_url = url
+        self.last_response = resp
+        self.last_params = params
+        self.last_object_fh = object_fh
+        self.last_return_type = return_type
+        self.last_headers = headers
 
         if not resp.ok:
             # if r.status_code != good_status:
@@ -518,7 +594,7 @@ class Documents(object):
         self.parent = parent
 
     def get(self,
-            _return_type: Optional[str]=None,
+            return_type: Optional[str]=None,
             authored: Optional[bool]=None,
             deleted_since: DST=None,
             folder_id: Optional[str]=None,
@@ -587,45 +663,39 @@ class Documents(object):
 
         url = BASE_URL + '/documents'
 
-        """
-        view: Optional[str] = None):
-        """
-
-
-
         d = dict()
-        if _return_type is not None:
-            d['_return_type'] = _return_type
-        if authored is not None:
+        if return_type and return_type is not None:
+            d['return_type'] = return_type
+        if authored and authored is not None:
             d['authored'] = authored
-        if deleted_since is not None:
+        if deleted_since and deleted_since is not None:
             d['deleted_since'] = deleted_since
             convert_datetime_to_string(d, 'deleted_since')
-        if folder_id is not None:
+        if folder_id and folder_id is not None:
             d['folder_id'] = folder_id
-        if group_id is not None:
+        if group_id and group_id is not None:
             d['group_id'] = group_id
-        if include_trashed is not None:
+        if include_trashed and include_trashed is not None:
             d['include_trashed'] = include_trashed
-        if limit is not None:
+        if limit and limit is not None:
             if limit == 0:
                 #0 is code for get all
                 #we'll max out our per request size
                 #then merge below
                 limit = 500
             d['limit'] = limit
-        if modified_since is not None:
+        if modified_since and modified_since is not None:
             d['modified_since'] = modified_since
             convert_datetime_to_string(d, 'modified_since')
-        if order is not None:
+        if order and order is not None:
             d['order'] = order
-        if profile_id is not None:
+        if profile_id and profile_id is not None:
             d['profile_id'] = profile_id
-        if sort is not None:
+        if sort and sort is not None:
             d['sort'] = sort
-        if starred is not None:
+        if starred and starred is not None:
             d['starred'] = starred
-        if tag is not None:
+        if tag and tag is not None:
             d['tag'] = tag
 
         response_doc_fcn = document_fcns[view]
@@ -1033,7 +1103,21 @@ class Trash(object):
     def __init__(self, parent):
         self.parent = parent
 
-    def get(self, **kwargs):
+    def get(self,
+                return_type: Optional[str]=None,
+                authored: Optional[bool]=None,
+                deleted_since: DST=None,
+                folder_id: Optional[str]=None,
+                group_id: Optional[str]=None,
+                include_trashed: Optional[bool]=None,
+                limit: Optional[int] =20,
+                modified_since: DST=None,
+                order: Optional[str]=None,
+                profile_id: Optional[str]=None,
+                sort: Optional[str]=None,
+                starred: Optional[bool]=None,
+                tag: Union[List[str], str, None] = None,
+                view: Optional[str] = None):
         """       
         
         Online Documentation
@@ -1070,6 +1154,44 @@ class Trash(object):
         """
 
         url = BASE_URL + '/trash'
+
+        #----------------------------------------------
+        #----------------------------------------------
+        #JAH: At this point ...
+        #----------------------------------------------
+        #----------------------------------------------
+
+        #Accept : header
+        #x folder_id
+        #x group_id
+        #x limit
+        #x modified_since
+
+        d = dict()
+        if return_type and return_type is not None:
+            d['return_type'] = return_type
+        if authored and authored is not None:
+            d['authored'] = authored
+        if deleted_since and deleted_since is not None:
+            d['deleted_since'] = deleted_since
+            convert_datetime_to_string(d, 'deleted_since')
+        if folder_id and folder_id is not None:
+            d['folder_id'] = folder_id
+        if group_id and group_id is not None:
+            d['group_id'] = group_id
+        if include_trashed and include_trashed is not None:
+            d['include_trashed'] = include_trashed
+        if limit and limit is not None:
+            if limit == 0:
+                # 0 is code for get all
+                # we'll max out our per request size
+                # then merge below
+                limit = 500
+            d['limit'] = limit
+
+
+
+
         if 'id' in kwargs:
             id = kwargs.pop('id')
             url += '/%s/' % id

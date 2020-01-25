@@ -1,7 +1,16 @@
 # Mendeley Code For Python
 
-[![Join the chat at https://gitter.im/ScholarTools/mendeley_python](https://badges.gitter.im/ScholarTools/mendeley_python.svg)](https://gitter.im/ScholarTools/mendeley_python?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)  
 This repo implements the Mendeley API in Python. It also implements a client library. It will also implement library analysis code.
+
+## Current Status ##
+
+Jim is currently (Jan 2020) reworking the code to have 3 features before building out some of the planned features of this library.
+1. Reworking API to have specified input parameters, rather than just relying on keyword arguments. The hope is that this helps with autocomplete options.
+2. Making the local client library backend into a sqlite database, rather than a pandas dataframe. I was running into data consistency issues that I hope this will solve.
+3. Supporting local changes that are synced at a later point in time. Currently all changes are sent to the server, and only exist locally after then pulling from the server.
+
+The old version of this code can be found at:
+https://github.com/ScholarTools/mendeley_python
 
 ## Motivation
 
