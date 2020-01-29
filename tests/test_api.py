@@ -16,8 +16,8 @@ from mendeley import API
 # TODO: We need to test if we can instatiate the API
 m = API()
 
-# Definitions
-# ----------------------------------------------------------------------
+#   Definitions
+#------------------------------------------------------------------------------
 def test_academic_statuses():
     a_status = m.definitions.academic_statuses()
 
@@ -28,12 +28,26 @@ def test_subjects_areas():
 def test_document_types():
     doc_types = m.definitions.document_types()
 
-
+#Document Get Testing
+#------------------------------------------------------------------------------
 def test_get_document1():
     m = API()
     docs = m.documents.get()
-    docs = m.documents.get(limit="asdf")
+    id0 = docs.docs[0].id
+    single_doc = m.documents.get_by_id(id0)
+    deleted_docs = m.documents.get_deleted()
+    d2 = m.documents.get_deleted(return_type='ids')
 
+    #TODO: Why doesn't this get labeled as being an error in PyCharm??
+    #docs = m.documents.get(limit="asdf")
+
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+#               Old Test Code
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 
 
 doc_id_list = []

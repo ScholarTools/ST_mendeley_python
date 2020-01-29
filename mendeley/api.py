@@ -118,7 +118,7 @@ class API(object):
     verbose : bool
     default_return_type : str
 
-    #TODO: This isn't correct
+    #TODO: These types are not correct ...
     #_UserAuthorization
     access_token : str
     last_url : str
@@ -246,7 +246,6 @@ class API(object):
         return hasattr(lr,'links') and 'last' in lr.links
 
     def __repr__(self):
-        #Note, we might want to
         pv = [
             'last_url',self.last_url,
             'last_response',self.last_response,
@@ -433,6 +432,9 @@ class API(object):
             return req.text
         elif return_type is 'response':
             return req
+        elif return_type is 'ids':
+            temp = req.json()
+            return [x['id'] for x in temp]
         else:
             raise Exception('No match found for return type')
 
@@ -596,11 +598,10 @@ class Documents(object):
     def get(self,
             return_type: Optional[str]=None,
             authored: Optional[bool]=None,
-            deleted_since: DST=None,
             folder_id: Optional[str]=None,
             group_id: Optional[str]=None,
             include_trashed: Optional[bool]=None,
-            limit: Optional[int] =20,
+            limit: Optional[int]=20,
             modified_since: DST=None,
             order: Optional[str]=None,
             profile_id: Optional[str]=None,
@@ -620,9 +621,6 @@ class Documents(object):
             returns users documents.
         modified_since : string or datetime
             Returns only documents modified since this timestamp. Should be 
-            supplied in ISO 8601 format.
-        deleted_since : string or datetime
-            Returns only documents deleted since this timestamp. Should be 
             supplied in ISO 8601 format.
         profile_id : string
             The id of the profile that the document belongs to, that does not 
@@ -653,6 +651,12 @@ class Documents(object):
             - 'last_modified'
             - 'title'
 
+        Deleted Files
+        -------------
+        The underlying API has the same REST point for deleted files, but only
+        returns the IDs of the deleted files. I've moved a request for deleted
+        files to a different method.
+
         Examples
         --------
         from mendeley import API
@@ -668,9 +672,6 @@ class Documents(object):
             d['return_type'] = return_type
         if authored and authored is not None:
             d['authored'] = authored
-        if deleted_since and deleted_since is not None:
-            d['deleted_since'] = deleted_since
-            convert_datetime_to_string(d, 'deleted_since')
         if folder_id and folder_id is not None:
             d['folder_id'] = folder_id
         if group_id and group_id is not None:
@@ -682,8 +683,9 @@ class Documents(object):
                 #0 is code for get all
                 #we'll max out our per request size
                 #then merge below
-                limit = 500
-            d['limit'] = limit
+                d['limit'] = 500
+            else:
+                d['limit'] = limit
         if modified_since and modified_since is not None:
             d['modified_since'] = modified_since
             convert_datetime_to_string(d, 'modified_since')
@@ -699,12 +701,7 @@ class Documents(object):
             d['tag'] = tag
 
         response_doc_fcn = document_fcns[view]
-
-        if deleted_since is not None:
-            #TODO: document this more ...
-            response_view = 'deleted'
-        else:
-            response_view = view
+        response_view = view
 
         if view is None:
             # If no view specified, set default to 'all'
@@ -735,42 +732,50 @@ class Documents(object):
         result = self.parent.make_get_request(url, models.DocumentSet.create, d, response_params)
 
         if limit == 0:
+            #TODO: Test this when the return type is not an object ...
             result.get_all_docs()       
         
         return result
 
-    def get_single(self, id, **kwargs):
+    def get_by_id(self,
+                   id: str,
+                   return_type: Optional[str] = None,
+                   view: Optional[str] = None):
         """
-        https://api.mendeley.com/apidocs#!/documents/getDocuments
+        https://api.mendeley.com/apidocs/docs#!/documents/getDocument
 
         Parameters
         ----------
         id :
         view :
+            - 'all'
             - 'bib'
             - 'client'
-            - 'tags' : returns user's tags
             - 'patent'
-            - 'all'
+            - 'tags' : returns user's tags
+
 
         Examples
         --------
         from mendeley import API
         m = API()
-        d = m.documents.get(limit=1)
+        #Note you'd need to have this from a previous call ...
+        id = 'b2ad49aa-4c99-3b04-85b3-b7e67245d5f2'
+        d = m.documents.get_by_id(id)
 
         """
 
         url = BASE_URL + '/documents'
         url += '/%s/' % id
 
-        view = kwargs.get('view')
+        d = dict()
+        if return_type and return_type is not None:
+            d['return_type'] = return_type
 
-        if 'deleted_since' in kwargs:
-            view = 'deleted'
-
-        limit = kwargs.get('limit', 20)
-        response_params = {'fcn': document_fcns[view], 'view': view, 'limit': limit}
+        response_params = {
+            'fcn': document_fcns[view],
+            'view': view,
+            'limit': 1}
 
         return self.parent.make_get_request(url, models.DocumentSet.create, kwargs, response_params)
 
@@ -780,22 +785,72 @@ class Documents(object):
     #Updated since ...    
     #These should wrap get in a smart way ...
     
-    def deleted_files(self, **kwargs):
+    def get_deleted(self,
+            limit: Optional[int] = 20,
+            return_type: Optional[str] = None,
+            since: DST=None):
         """
         Parameters
         ----------
+        limit
+        return_type : Not Yet Implemented ...
         since
         group_id
         
         
         """
-        
-        #TODO: Throw deprecated error  
-        
-        convert_datetime_to_string(kwargs, 'since')
 
-        url = BASE_URL + '/deleted_documents'
-        return self.parent.make_get_request(url, models.deleted_document_ids, kwargs)
+        url = BASE_URL + '/documents'
+
+        d = dict()
+        if return_type and return_type is not None:
+            d['return_type'] = return_type
+        if limit and limit is not None:
+            if limit == 0:
+                #0 is code for get all
+                #we'll max out our per request size
+                #then merge below
+                d['limit'] = 500
+            else:
+                d['limit'] = limit
+
+
+        if since and since is not None:
+            d['deleted_since'] = since
+            convert_datetime_to_string(d, 'deleted_since')
+        else:
+            d['deleted_since'] = "2000-01-01T00:00:01.000Z"
+
+        response_view = 'deleted'
+        response_doc_fcn = document_fcns[response_view]
+
+        # Most of these are reference only, except for the fcn value
+        response_params = {
+            'fcn': response_doc_fcn,
+            'view': response_view,
+            'limit': limit,
+            'page_id': 0
+        }
+
+        verbose = _process_verbose(self.parent, d, response_params)
+        if verbose:
+            if limit == 0:
+                print(
+                    "Requesting all documents from Mendeley with params: %s" % (
+                        d))
+            else:
+                print(
+                    "Requesting up to %d documents from Mendeley with params: %s" % (
+                    limit, d))
+
+        result = self.parent.make_get_request(url, models.DocumentSet.create,
+                                              d, response_params)
+
+        if limit == 0:
+            # TODO: Test this when the return type is not an object ...
+            result.get_all_docs()
+
+        return result
 
     def create(self, doc_data, **kwargs):
         """

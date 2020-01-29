@@ -40,6 +40,8 @@ from sqlalchemy import create_engine
 #-------------------
 from . import config
 from . import utils
+from .utils import get_truncated_display_string as td
+from .utils import get_list_class_display as cld
 
 
 Base = declarative_base()
@@ -364,6 +366,88 @@ class Document(Base):
             else:
                 setattr(self, k, data[k])
 
+
+    """
+    def __repr__(self):
+
+        pv = ['pmid', self.pmid, 'doi', self.doi, 'issn', self.issn,
+              'isbn', self.isbn, 'arxiv', self.arxiv]
+        return utils.property_values_to_string(pv)
+
+        abstract = Column(String(10000))
+        accessed = Column(String)
+        arxiv = Column(String, index=True)
+        authored = Column(Boolean)
+        authors = relationship('DocumentContributors',
+                               cascade="all, delete-orphan")
+        chapter = Column(String(10))
+        citation_key = Column(String(255))
+        city = Column(String(255))
+        code = Column(String(255))
+        confirmed = Column(Boolean)
+        country = Column(String(255))
+        created = Column(String)
+        day = Column(Integer)
+        department = Column(String(255))
+        doi = Column(String, index=True)
+        edition = Column(String)
+        editors = relationship('DocumentContributors',
+                               cascade="all, delete-orphan")
+        file_attached = Column(Boolean)
+        folder_uuids = relationship('FolderUUIDs',
+                                    cascade="all, delete-orphan")
+        genre = Column(String(255))
+        group_id = Column(String)
+        hidden = Column(Boolean)
+        id = Column(String, nullable=False, unique=True, index=True)
+        institution = Column(String(255))
+        isbn = Column(String)
+        issn = Column(String)
+        issue = Column(String(255))
+        keywords = relationship('DocumentKeywords',
+                                cascade="all, delete-orphan")
+        language = Column(String(255))
+        last_modified = Column(String)
+        medium = Column(String)
+        month = Column(Integer)
+        notes = Column(String)
+        pages = Column(String(50))
+        patent_application_number = Column(String(255))
+        patent_legal_status = Column(String(255))
+        patent_owner = Column(String(255))
+        pmid = Column(BigInteger, index=True)
+        private_publication = Column(Boolean)
+        profile_id = Column(String)
+        publisher = Column(String(255))
+        read = Column(Boolean)
+        reprint_edition = Column(String(10))
+        revision = Column(String(255))
+        scopus = Column(String)
+        series = Column(String(255))
+        series_editor = Column(String(255))
+        series_number = Column(String(255))
+        short_title = Column(String(50))
+        source = Column(String(255))
+        source_type = Column(String(255))
+        ssrn = Column(String)
+        starred = Column(Boolean)
+        tags = relationship('DocumentTags', cascade="all, delete-orphan")
+        title = Column(String(255))
+        translators = relationship('DocumentContributors',
+                                   cascade="all, delete-orphan")
+        type = Column(String)  # Journal, Book Section, etc.
+        user_context = Column(String(255))
+        volume = Column(String(10))
+        websites = relationship('DocumentUrls', cascade="all, delete-orphan")
+        year = Column(Integer)
+
+
+
+
+
+
+        pass
+    """
 
 
 

@@ -46,12 +46,13 @@ from sqlalchemy import desc
 
 # Local imports
 from .api import API
+from .db_tables import DB
+
 from . import errors
 from . import models
 from . import utils
 from . import config
-from . import db_tables as db
-from .db_tables import DB
+
 
 # Optional Local Imports
 #-----------------------------
@@ -68,7 +69,6 @@ class UserLibrary:
     """
     Attributes
     ----------
-    api : mendeley.api.API
     db_session :  db_interface.DBSessionInterface or None
         NOT YET IMPLEMENTED ...
     dirty_db : 
@@ -85,7 +85,13 @@ class UserLibrary:
     
     """
 
-    FILE_VERSION = 1
+    api : 'API'
+    db : 'DB'
+    user_name : 'str'
+    verbose : 'bool'
+    cleaner : 'LibraryCleaner'
+
+
 
     def __init__(self, user_name=None, verbose=False, sync=True, force_new=False):
         """
@@ -105,13 +111,16 @@ class UserLibrary:
         self.user_name = self.api.user_name
         self.verbose = verbose
 
+
         # path handling
         # -------------
         root_path = config.get_save_root(['client_library'], True)
         save_name = utils.user_name_to_file_name(self.user_name) + '.pickle'
         self.file_path = os.path.join(root_path, save_name)
 
-        self.db = db.DB(self.user_name)
+        self.db = DB(self.user_name)
+
+        self.cleaner = LibraryCleaner(self.db)
 
         #TODO:
         #self._load(force_new)
@@ -188,8 +197,7 @@ class UserLibrary:
 
     def get_document(self, 
                      doi=None, 
-                     pmid=None, 
-                     index=None, 
+                     pmid=None,
                      return_json=False, 
                      allow_multiple=False, 
                      _check=False):
@@ -227,7 +235,9 @@ class UserLibrary:
         If allow_multiple is True, then a list of results will be returned,
         regardless of wehther or not we have more than one entry.
         """
-            
+
+        import pdb
+        pdb.set_trace()
 
 
         
@@ -874,69 +884,48 @@ class Sync(object):
         if self.verbose:
             print(msg)
 
+class LibraryCleaner():
 
-def _raw_to_data_frame(raw_json, include_json=True):
-    """
-    Parameters
-    ----------
-    raw_json : json
-        JSON data, generally (always?) from the Mendeley server. 
-    """
-    
-    """
-    Status: This is currently a bit of a mess because of Pandas auto-inference.
-    We might also switch all of this over to a SQL database.
-    Pandas also likes to use NaNs, which is nice for ignoring missing data, but
-    goes against Python's typical usage of None to indicate that a value has not 
-    been set. This can cause headaches in later processing.
-    """    
-    
-    # Note that I'm not using the local attribute
-    # as we can then use this for updating new information
-    df = pd.DataFrame(raw_json,dtype="object")
+    db : 'DB'
 
-	#https://github.com/pandas-dev/pandas/issues/1972
-    df = df.where(pd.notnull(df), None)    
-    
-    # len(df) == 0 means that no documents were found.
-    # Further operations on df would fail.
-    if len(df) == 0:
-        return df
-        
-    if include_json:
-        df['json'] = raw_json    
-                
-    #Ensuring minimum format
-    #---------------------------------------
-    if 'identifiers' not in df:   
-        df['identifiers'] = None
-        
-    if 'created' not in df:
-        df['created'] = None
-        
-    if 'last_modified' not in df:
-        df['last_modified'] = None    
+    def __init__(self,db : DB):
+        self.db = db
 
-    df.set_index('id', inplace=True)
+    def get_docs_no_pmid(self,since=None,sort=None,limit=None):
+        """
+
+        sort:
+            'old_first'
+            'new_first'
+
+        :param since:
+        :param sort:
+        :param limit:
+        :return:
+        """
+
+        #TODO: implement since ...
+
+        session = self.db.get_session()
+
+        Doc = self.db.Document
+
+        q = session.query(Doc).filter_by(pmid=None)
+        if sort is 'new_first' or sort is None:
+            q.order_by(Doc.last_modified)
+        else:
+            q.order_by(desc(Doc.last_modified))
 
 
-    #Formatting values
-    #----------------------------------------------------------
-    # 2010-03-16T16:39:02.000Z
-    # https://github.com/closeio/ciso8601
-    # t2 = time.clock()
-    df['created'] = df['created'].apply(parse_datetime)
-    # print(time.clock() - t2)
-    # strptime("2008-09-03T20:56:35.450686Z", "%Y-%m-%dT%H:%M:%S.%fZ")
+        if limit is not None:
+            q.limit(limit)
 
-    # t2 = time.clock()
-    df['last_modified'] = df['last_modified'].apply(parse_datetime)
-    # print(time.clock() - t2)
-    df['issn'] = df['identifiers'].apply(parse_issn)
-    df['pmid'] = df['identifiers'].apply(parse_pmid)
-    df['doi'] = df['identifiers'].apply(parse_doi)
+        #desc
+        wtf = q.all()
 
-    return df
+        import pdb
+        pdb.set_trace()
+        pass
 
 
 def parse_datetime(x):
