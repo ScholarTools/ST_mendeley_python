@@ -4,6 +4,11 @@ The goal of this code is to support hosting a client library. This module
 should in the end function similarly to the Mendeley Desktop.
 
 
+Syncing
+-------------------------------------------
+
+
+
 
 Jim's next goals
 ----------------
@@ -13,6 +18,7 @@ Jim's next goals
     - needs to handle local/dirty docs
     - autodownload files when opening ...
 3) Update by PMID ...
+4) How to sync deleted ids?
 
 
 
@@ -32,6 +38,7 @@ wtf = cl.has_docs([14581232,10529706,12345])
 """
 
 #Standard Library Imports
+from typing import Optional, Union, TypeVar, List
 import pickle
 from datetime import datetime
 from timeit import default_timer as ctime
@@ -46,43 +53,38 @@ from sqlalchemy import desc
 
 # Local imports
 from .api import API
-from .db_tables import DB
+from .db_tables import DB, Document
 
 from . import errors
 from . import models
 from . import utils
 from . import config
+from .utils import display_class, quotes
 
 
 # Optional Local Imports
 #-----------------------------
-from .optional import rr
-from .optional import pdf_retrieval
+#These need to be updated
+#from .optional import rr
+#from .optional import pdf_retrieval
+
 #from . import db_interface
 # from . import archive_library
 
 fstr = utils.float_or_none_to_string
 cld = utils.get_list_class_display
 
+class LibraryOptions(object):
+
+    #TODO: Support default sync resolution mechanism
+    #TODO: Load options from file???? - GUI?
+
+    pass
 
 class UserLibrary:
     """
     Attributes
     ----------
-    db_session :  db_interface.DBSessionInterface or None
-        NOT YET IMPLEMENTED ...
-    dirty_db : 
-        If True specifies that the DB needs to be updated/fixed based on the 
-        local docs.
-    docs : Pandas DataFrame
-        Library data as organized into a DataFrame.
-    user_name : string
-        Name of the user to process. FORMAT????
-    verbose : bool
-        Whether or not to print out verbose messages.
-    sync_result : Sync or None
-        This is used for mainly for debugging.
-    
     """
 
     api : 'API'
@@ -93,7 +95,8 @@ class UserLibrary:
 
 
 
-    def __init__(self, user_name=None, verbose=False, sync=True, force_new=False):
+    def __init__(self, user_name=None, verbose=False, sync=True,
+                 force_new=False):
         """
         Inputs
         ------
@@ -106,7 +109,6 @@ class UserLibrary:
             If true the library is not loaded from disk.
         """
         
-        self.dirty_db = False
         self.api = API(user_name=user_name,verbose=verbose)
         self.user_name = self.api.user_name
         self.verbose = verbose
@@ -119,17 +121,12 @@ class UserLibrary:
         self.file_path = os.path.join(root_path, save_name)
 
         self.db = DB(self.user_name)
+        self.db_session = self.db.get_session()
 
         self.cleaner = LibraryCleaner(self.db)
 
-        #TODO:
-        #self._load(force_new)
-
         if sync:
-            #self, api:API, db:DB, verbose=False
-            self.sync_result = Sync(self.api,self.db,self.verbose)
-        else:
-            self.sync_result = None
+            self.sync()
 
     def __repr__(self):
 
@@ -139,30 +136,35 @@ class UserLibrary:
               'user_name',  self.user_name,
               'file_path',  self.file_path,
               'sync_result',cld(self.sync_result),
-              'verbose',    self.verbose]
+              'verbose',    self.verbose,
+              'methods', '--------------------'
+              'has_docs','Returns whether library has the documents']
         
         return utils.property_values_to_string(pv)
 
     def has_docs(self,ids,type='pmid'):
         """
 
+        Parameters
+        ----------
+        ids :
+        type :
 
-        :param ids:
-        :param type:
-        :return:
         """
 
         output = []
-        session = self.db.get_session()
+        session = self.db_session
         if type == 'pmid':
             for id in ids:
                 temp = session.query(self.db.Document.pmid).filter_by(pmid = id).first()
                 output.append(bool(temp))
-            pass
         elif type =='doi':
-            pass
+            for id in ids:
+                temp = session.query(self.db.Document.doi).filter_by(doi = id).first()
+                output.append(bool(temp))
         elif type == 'arxiv':
-            pass
+            temp = session.query(self.db.Document.arxiv).filter_by(arxiv=id).first()
+            output.append(bool(temp))
         else:
             raise Exception('Unrecognized id type')
 
@@ -180,174 +182,69 @@ class UserLibrary:
         ? How do we know if something has been restored from the trash?
         """
 
-        """
-        Due to the complexity of syncing, the syncing code has been moved to
-        its own class.
-        """
-        
         if verbose is None:
             verbose = self.verbose
 
-        sync_result = Sync(self.api, self.db, verbose=verbose)
-        self.sync_result = sync_result
+        self.sync_result = Sync(self.api, self.db, verbose=verbose)
 
     # def archive(self):
     #     archivist = archive_library.Archivist(library=self, api=self.api)
     #     archivist.archive()
 
-    def get_document(self, 
-                     doi=None, 
-                     pmid=None,
-                     return_json=False, 
-                     allow_multiple=False, 
-                     _check=False):
+    def get_documents(self,
+                     query_dict,
+                     as_dict=False):
+
+        session = self.db_session
+
+        temp = session.query(self.db.Document).filter_by(**query_dict)
+        #TODO: Support hiding deleted and trashed ...
+        docs = temp.all()
+        if docs and as_dict:
+            return [x.as_dict for x in docs]
+        else:
+            return docs
+
+
+    def get_document(self,
+                     query_dict,
+                     as_dict=False):
         """
         Returns the document (i.e. metadata) based on a specified identifier.
         
         Parameters
         ----------
-        doi : string (default None)
-            If specified we'll find the document based on the specified doi
-        pmid : string (default None)
-            If specified we'll find the document based on the specifid pmid
-        index : int (default None)
-        
-        #TODO: Support indices ...
-            
-        return_json : bool (default False)
-            If true, the results are returned as JSON
-        allow_multiple : bool (default False)
-            If true then multiple entries are allowed. This changes the return
-            type from a single element to a list.
-        _check : bool (default False)
-            If true, then the goal is simply to assess the count of the matches
-            not the value of the matches.
+        as_dict : bool (default False)
+            - True, returned as dictionary
+            - False, SQLAlchemy objects
+
+        Improvements
+        ------------
+        - add methods that return counts or partial queries for qeury building
 
         Returns
         -------   
-        int
-            If _check is True
-        models.Document object
-            If return_json is False
-        JSON
-            If return_json is True
-            
-        If allow_multiple is True, then a list of results will be returned,
-        regardless of wehther or not we have more than one entry.
+
+
+
+        Examples
+        --------
+        from mendeley import client_library
+        c = client_library.UserLibrary(verbose=True)
+        doc = c.get_document({'title':'magazine article title'})
+
+
+
         """
 
-        import pdb
-        pdb.set_trace()
+        session = self.db_session
 
-
-        
-        # TODO: Change this so that it interacts with the database, 
-        #not the Pandas dataframe
-
-        parse_df_rows = True
-        document_json = None
-
-        #1) Index recognition
-        #-----------------------------------------------------------
-        #TODO: We could support an indices input, that would return a list
-        #=> "indices"
-        if index is not None:
-            if index < 0 or index >= len(self.docs):
-                if _check and index > 0:
-                    return 0
-                else:
-                    raise errors.UserLibraryError('Out of bounds index request')
-            elif _check:
-                return 1
-                
-            #For an index, we expect a single result
-            document_json = [self.docs.ix[index]['json']]
-            parse_df_rows = False
-
-        elif doi is not None:
-            #All dois in the library are stored as lower
-            df_rows = self.docs[self.docs['doi'] == doi.lower()]
-        elif pmid is not None:
-            df_rows = self.docs[self.docs['pmid'] == pmid]
+        temp = session.query(self.db.Document).filter_by(**query_dict)
+        doc = temp.first()
+        if doc and as_dict:
+            return doc.as_dict()
         else:
-            raise errors.UserCodeError('get_document: Unrecognized identifier search option')
-
-
-        # Handling of the parsing of the rows
-        # ------------------------------------
-        #
-        #   We parse rows when 
-        if parse_df_rows:
-            # We parse rows when the rows to grab has not been specified
-            # explicitly (i.e. as an index) and we need to determine 
-            # if we found any matches
-            
-            rows_json = df_rows['json']
-            n_results = len(rows_json)
-            if n_results == 1:
-                document_json = [rows_json[0]]
-            elif n_results == 0:
-                if _check:
-                    return 0
-                else:
-                    if doi is not None:
-                        raise errors.DocNotFoundError('DOI: "%s" not found in library' % doi)
-                    elif pmid is not None:
-                        raise errors.DocNotFoundError('PMID: "%s" not found in library' % pmid)
-                    else:
-                        raise Exception('Code logic error, this should never run')
-            else: 
-                if allow_multiple:
-                    document_json = [x for x in rows_json]
-                elif _check:
-                    return n_results
-                else:
-                    if doi is not None:
-                        raise Exception(
-                                '%d DOIs found for doi: "%s", use option allow_multiple=True if multiple results is ok' 
-                                        % (n_results,doi))
-                    elif pmid is not None:
-                        raise Exception(
-                                '%d PMIDs found for pmid: %s", use option allow_multiple=True if multiple results is ok' 
-                                % (n_results,pmid))
-                    else:
-                        raise Exception('Code logic error, this should never run')
-              
-        # Returning the results
-        # ------------------------
-        if _check:
-            return len(document_json)
-        elif return_json:
-            if allow_multiple:
-                return document_json
-            else:
-                return document_json[0]
-        else:
-            docs = [models.Document(x, self.api) for x in document_json]
-            if allow_multiple:
-                return docs
-            else:
-                return docs[0]
-
-    def check_for_document(self, doi=None, pmid=None):
-        """
-        Attempts to call self.get_document and checks for error.
-        If no error, the DOI has been found.
-
-        Parameters
-        ----------
-        doi - string (default None)
-            Document's DOI 
-        pmid - string (default None)
-
-        Returns
-        -------
-        bool - True if DOI is found in the Mendeley library. False otherwise.
-            This function is also true if multiple matches are found
-        """
-        
-        return self.get_document(doi=doi,pmid=pmid,
-                                 _check=True,allow_multiple=True) > 0
+            return doc
 
     def add_to_library(self, 
                        doi=None, 
@@ -650,69 +547,102 @@ class Sync(object):
 
 
         session = db.get_session()
-        last_modified =  session.query(db.Document.last_modified).order_by(desc('last_modified')).first()
 
-        dirty_docs = session.query(db.Document).filter_by(is_dirty=True).all()
-        if dirty_docs:
-            pass
-            #I think we'll want to resolve these first, then
+        #=> I want to get the times
+        #wtf = session.query(db.)
+
+        import pdb
+        pdb.set_trace()
+
+        #----------------------------------------------------------------------
+        #TODO: Does our code support an empty database?
+        last_modified = session.query(db.Document.last_modified).order_by(desc('last_modified')).first()
+        last_modified = last_modified[0]
+
 
         new_docs = api.documents.get(modified_since=last_modified,limit=100,return_type='json')
+        result = db.add_documents(new_docs,session=session,drop_time=last_modified)
+        if result.n_different > 0:
+            self.verbose_print(result.get_summary_string())
+        else:
+            self.verbose_print("No new documents found in sync")
+
         count = 0
-
-        self.ids_new = []
-        self.ids_modified = []
-        temp = db.add_documents(new_docs)
-        self.ids_new.extend(temp['new'])
-        self.ids_modified.extend(temp['modified'])
-
         while api.has_next_link:
             count += 100
-            print("Adding more docs starting at %d" % count)
+            #TODO: Fix this to occur after we get the new ones
+            print("Requesting more docs starting at {}".format(count))
             docs_to_add = api.next()
-            temp = db.add_documents(docs_to_add)
-            self.ids_new.extend(temp['new'])
-            self.ids_modified.extend(temp['modified'])
+            r2 = db.add_documents(docs_to_add,session=session,drop_time=last_modified)
+            self.verbose_print(r2.get_summary_string())
+            result.merge(r2)
+
+        self.add_result = result
+
+        session.commit()
+
+
+        #Deleted docs
+        #----------------------------------------------------------------------
+        deleted_docs = api.documents.get_deleted(return_type='json')
+
+        #Handling updated docs - sync to server
+        #----------------------------------------------------------------------
+        #Note, conflicts have already been handled at this point ...
+        dirty_docs = session.query(db.Document).filter_by(is_dirty=True).all() # type: List[Document]
+        if dirty_docs:
+            self.verbose_print()
+            for doc in dirty_docs:
+                if doc.is_trashed:
+                    pass
+                elif doc.is_deleted:
+                    pass
+                else:
+                    #Update
+                    temp = doc.as_dict()
+                    r = api.documents.update(temp['id'], temp)
+                    doc.commit(_is_dirty=False)
+
+
+        #Look for deleted docs
+
+        #Look for trash
+
+        session.close()
+
+        #     #What if in trash?
+        #     #What if deleted????
+        #     temp = api.documents.get_by_id()
+
+        #Now, let's look at dirty docs ...
+        #Note, any conflicts will have already been handled ...
 
 
         self.verbose_print("Sync completed")
         #trashed_docs = api.trash.get()
 
+        """
+        - /documents/?modified_since=2020-01-22T19:36:03.000Z&limit=100&view=all HTTP/1.1
+        - GET /documents/?limit=100&deleted_since=2020-01-22T19:36:03.000Z HTTP/1.1
+        - GET /trash/?modified_since=2020-01-22T19:36:03.000Z&limit=100&view=all HTTP/1.1
+        - GET /files/?include_trashed=true&limit=100&deleted_since=2020-01-22T19:36:09.000Z HTTP/1.1
+        - GET /files/?added_since=2020-01-22T19:36:09.000Z&include_trashed=true&limit=100 HTTP/1.1
+        - GET /annotations/?modified_since=2020-01-22T19:36:09.000Z&limit=200&include_trashed=true HTTP/1.1
+        - GET /annotations/?limit=200&include_trashed=true&deleted_since=2020-01-22T19:36:10.000Z HTTP/1.1
+        - GET /recently_read/ HTTP/1.1- POST /events/_batch/ HTTP/1.1
+        
+        """
+
+
+
 
     def __repr__(self):
-        new_str = 'list length: %d' % len(self.ids_new)
-        modified_str = 'list length: %d' % len(self.ids_modified)
-        pv = ['api', cld(self.api),
-              'db', cld(self.db),
-              'ids_new',new_str,
-              'ids_modified',modified_str,
-              'verbose',self.verbose]
+        return display_class(self,
+                             [  'db', cld(self.db),
+                                'api', cld(self.api),
+                                'verbose', self.verbose,
+                                'add_result',cld(self.add_result)])
 
-        return utils.property_values_to_string(pv)
-
-    def full_sync(self):
-
-        t1 = ctime()
-        self.verbose_print('Starting retrieval of all documents')
-
-        json_data = self.api.documents.get(view='all',limit=0,return_type='json')
-
-        self.raw_json = json_data
-        self.dataframe = _raw_to_data_frame(json_data)
-
-        #TODO: How are we referring to the database? 
-        if self.db_session is not None:
-            for entry in self.raw_json:
-                self.db_session.add_to_db(entry)
-
-        self.full_retrieval_time = ctime() - t1
-
-        if self.raw_json is not None:
-            self.verbose_print('Finished retrieving all documents (n=%d) in %s seconds'
-                                % (len(self.raw_json), fstr(self.full_retrieval_time)))
-        else:
-            self.verbose_print('No documents found in %s seconds'
-                               % fstr(self.full_retrieval_time))
 
     def update_sync(self):
         

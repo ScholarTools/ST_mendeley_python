@@ -69,7 +69,7 @@ doi = '10.1177/1073858414541484'
 doi = '10.1002/bit.25159'
 doi_for_file = '10.1002/biot.201400046'
 
-temp = client_library.UserLibrary(verbose=True)
+c = client_library.UserLibrary(verbose=True)
 m = api.API()
 
 # analyst = integrity.Analysis(temp)
@@ -115,6 +115,33 @@ m.documents.create(ae)
 # db_doi = '10.1111/j.1748-1716.1980.tb06578.x'
 # db_doc = db.get_saved_info(db_doi)
 # m_doc = temp.get_document(db_doi)
+
+#----------------------------------------------
+#Sync work
+#----------------------------------------------
+#Goal, modify a document locally then sync
+#it to get it to propagate
+from mendeley import client_library, API
+api = API()
+c = client_library.UserLibrary(verbose=True)
+doc = c.get_document({'title': 'magazine article title'})
+doc.city = 'this is the city2'
+doc.commit()
+c.sync()
+
+
+#Status:
+#X remove id from authors as_dict
+#X update on Mendeley, see what we get
+#X try using API with dict
+#X change object, verify is_dirty works
+#implement sync update with fixing is_dirty
+
+
+#-----------------------------------------
+
+
+
 
 
 

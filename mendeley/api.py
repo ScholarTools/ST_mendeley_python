@@ -136,6 +136,7 @@ class API(object):
         'object' - returns a processed object
         'json' - returns the respone parsed as json
         'raw' - returns the response text without processing 
+        'response' - returns the response object (requests library)
     verbose : bool (default False)
         
     last_response : 
@@ -156,8 +157,8 @@ class API(object):
             - 'public' : then the public API is accessed
         verbose : str
         force_reload_auth : bool (default False)
-            If true, the authorization is recomputed
-        default_return_type : str (default 'object')
+            If true, the authorization is recomputed even if it hasn't expired.
+        default_return_type : {'object','json','raw','response'}
         
         """
 
@@ -398,7 +399,8 @@ class API(object):
         if files is None:
             params = json.dumps(params)
 
-        resp = self.s.patch(url, data=params, auth=self.access_token, headers=headers, files=files)
+        resp = self.s.patch(url, data=params, auth=self.access_token,
+                            headers=headers, files=files)
 
         self.last_url = url
         self.last_response = resp
@@ -747,6 +749,13 @@ class Documents(object):
         Parameters
         ----------
         id :
+
+        return_type : {'object','json','raw','response'}
+            - 'object'
+            - 'json'
+            - 'raw'
+            - 'response'
+
         view :
             - 'all'
             - 'bib'
@@ -779,12 +788,6 @@ class Documents(object):
 
         return self.parent.make_get_request(url, models.DocumentSet.create, kwargs, response_params)
 
-    
-    #JAH TODO: Create methods
-    #Deleted since ...
-    #Updated since ...    
-    #These should wrap get in a smart way ...
-    
     def get_deleted(self,
             limit: Optional[int] = 20,
             return_type: Optional[str] = None,
@@ -922,7 +925,8 @@ class Documents(object):
         headers = dict()
         headers['Content-Type'] = 'application/vnd.mendeley-document.1+json'
 
-        return self.parent.make_patch_request(url, models.Document, new_data, headers=headers)
+        return self.parent.make_patch_request(url, models.Document,
+                                              new_data, headers=headers)
 
     def move_to_trash(self, doc_id):
 

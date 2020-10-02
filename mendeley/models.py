@@ -18,6 +18,10 @@ mendeley.api => contains the code that makes requests for these models
 #Standard Imports
 from typing import Optional, Union, TypeVar, List
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from . import API
 
 #Local Imports
 from .utils import get_truncated_display_string as td
@@ -319,7 +323,7 @@ class DocumentSet(object):
 
     view : Optional[str]
 
-    def __init__(self, json, m, params):
+    def __init__(self, json, m:'API', params):
         """
         Parameters
         ----------
@@ -332,6 +336,7 @@ class DocumentSet(object):
         
         """
         self.links = m.last_response.links
+        self.total_count = m.last_response.headers['Mendeley-Count']
         self.api = m
         self.response_params = params
         self.verbose = params['verbose']
@@ -434,7 +439,8 @@ class DocumentSet(object):
 
     def __repr__(self):
         pv = [
-        'links', self.links.keys(), 
+        'links', self.links.keys(),
+        'total_count',self.total_count,
         'docs', cld(self.docs), 
         'view', self.view,
         '-----','---  internal ---',

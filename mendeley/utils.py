@@ -2,34 +2,41 @@
 """
 """
 
-def float_or_none_to_string(x):
-    if x is None:
-        return 'None'
+
+class _Quotes(str):
+    pass
+
+
+def quotes(input_value):
+    if input_value is None:
+        return None
+    elif isinstance(3, int):
+        return input_value
     else:
-        return '%0.2f' % x
+        return _Quotes(input_value)
 
 
-def property_values_to_string(pv):
+def display_class(class_instance, pv):
+    return '\n%s:\n\n' % type(class_instance) + property_values_to_string(pv,
+                                                                          extra_indentation=4)
+
+
+def property_values_to_string(pv, extra_indentation=0):
     """
     Parameters
     ----------
     pv : OrderedDict
         Keys are properties, values are values
-        
-            
-	Related Functions
-	-----------------
-	from .utils import get_truncated_display_string as td
-	from .utils import get_list_class_display as cld
     """
 
     # Max length
 
     keys = pv[::2]
     values = pv[1::2]
+    values = ['"%s"' % x if isinstance(x, _Quotes) else x for x in values]
 
     key_lengths = [len(x) for x in keys]
-    max_key_length = max(key_lengths)
+    max_key_length = max(key_lengths) + extra_indentation
     space_padding = [max_key_length - x for x in key_lengths]
     key_display_strings = [' ' * x + y for x, y in zip(space_padding, keys)]
 
@@ -53,7 +60,8 @@ def get_list_class_display(value):
             if len(value) == 0:
                 return u'[??] len(0)'
             else:
-                return u'[%s] len(%d)' % (value[0].__class__.__name__, len(value))
+                return u'[%s] len(%d)' % (
+                value[0].__class__.__name__, len(value))
         except:
             import pdb
             pdb.set_trace()
@@ -62,7 +70,13 @@ def get_list_class_display(value):
         return u'<%s>' % (value.__class__.__name__)
 
 
-def get_truncated_display_string(input_string, max_length=50):
+def get_truncated_display_string(input_string: str, max_length: int = 30):
+    """
+
+    :param input_string:
+    :param max_length:
+    :return:
+    """
     if input_string is None:
         return 'None'
     elif len(input_string) > max_length:
@@ -70,12 +84,17 @@ def get_truncated_display_string(input_string, max_length=50):
     else:
         return input_string
 
+def float_or_none_to_string(x):
+    if x is None:
+        return 'None'
+    else:
+        return '%0.2f' % x
 
 def user_name_to_file_name(user_name):
     """
     Provides a standard way of going from a user_name to something that will
     be unique (should be ...) for files
-    
+
     NOTE: NO extensions are added
 
     See Also:
@@ -89,14 +108,12 @@ def user_name_to_file_name(user_name):
     return user_name.replace('.', '')
 
 
-
-
 def get_unnasigned_json(json_data, populated_object):
     """
-       Given an object which has had fields assigned to it, as well as the 
+       Given an object which has had fields assigned to it, as well as the
        JSON dict from which these values were retrieved, this function returns
        a list of keys that were not used for populating the object.
-       
+
        In order to match the attribute names and dictionary keys must have the
        same names.
     """
