@@ -17,7 +17,7 @@ from which to load the config file.
 #from the specified location. 
 #
 #	******* If specified, this should be the only value in the file. *******
-config_location = 'C:\users\my_mendeley_config.py'
+config_location = r'C:\users\my_mendeley_config.py'
 
 #==============================================================================
 #                       Main File Contents

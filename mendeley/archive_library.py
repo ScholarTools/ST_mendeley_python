@@ -1,3 +1,13 @@
+"""
+
+
+
+Usage:
+    
+
+"""
+
+
 # Standard imports
 import os
 import sys
@@ -9,12 +19,28 @@ import json
 from PyQt5.QtWidgets import *
 
 # Local imports
-from mendeley import client_library
-from mendeley import api
+from . import client_library
+from . import api
 
 
 class Archivist:
     def __init__(self, library=None, entered_api=None):
+        """
+        
+        
+
+        Parameters
+        ----------
+        library : TYPE, optional
+            DESCRIPTION. The default is None.
+        entered_api : TYPE, optional
+            DESCRIPTION. The default is None.
+
+        Returns
+        -------
+        None.
+
+        """
         if library is None:
             self.library = client_library.UserLibrary()
         else:

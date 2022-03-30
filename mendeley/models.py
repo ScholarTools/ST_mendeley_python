@@ -58,7 +58,7 @@ class WTF2(object):
 """
 
 
-# %%
+# %% Response Object
 
 class ResponseObject(object):
     # I made this a property so that the user could change this processing
@@ -130,7 +130,7 @@ class ResponseObject(object):
         return []
 
 
-# %%
+# %% Data Types
 class DocumentIdentifiers(ResponseObject):
     @classmethod
     def fields(cls):
@@ -285,7 +285,7 @@ def deleted_document_ids(json, m):
     return [x['id'] for x in json]
 
 
-# %%
+# %% Main Objects
 
 class ProfileInfo(object):
     """
@@ -336,7 +336,10 @@ class DocumentSet(object):
         
         """
         self.links = m.last_response.links
-        self.total_count = m.last_response.headers['Mendeley-Count']
+        try:
+            self.total_count = m.last_response.headers['Mendeley-Count']
+        except:
+           self.total_count = len(json) 
         self.api = m
         self.response_params = params
         self.verbose = params['verbose']
@@ -465,10 +468,89 @@ class DeletedDocument(ResponseObject):
     def __repr__(self):
         return 'id: %s' % self.id
 
+class FileSet(object):
+    
+    def __init__(self, json, m:'API', params):
+        """
+        Parameters
+        ----------
+        json : dict
+        m : mendeley.api._APIMethods
+        params: dict
+            'fcn' - function handle to the type of document to create
+            'view' - type of document info to return
+            'limit' - maximum # of documents to expect
+        
+        """
+        self.links = m.last_response.links
+        self.total_count = m.last_response.headers['Mendeley-Count']
+        self.api = m
+        self.response_params = params
+        self.verbose = params['verbose']
+        self.page_id = params['page_id']
+        self.json = json
+
+        fcn = params['fcn']
+
+        # TODO: Figure out how to support lazy loading
+        self.docs = [fcn(x, m) for x in json]
+        #self.view = params['view']
+
+class File2(ResponseObject):
+    
+    
+    """
+    Created this for:
+    files.get()
+    Not sure where the original File class comes from
+    
+    id :
+    document_id :
+    mime_type : 'application/pdf'
+    file_name :
+    size : bytes?
+    created :
+    filehash : md5?
+    
+    Improvements
+    ------------
+    1. Add ability to get document from File2 object
+    
+    
+    """
+
+    def __init__(self, json, m):
+        """
+        Parameters
+        ----------
+        json : dict
+
+        """
+        super(File, self).__init__(json)
+
+        #self.file_id = self.__getattr__('id')
+        #self.file_location = 'https://api.mendeley.com/files/' + self.file_id
+
+    @classmethod
+    def fields(cls):
+        return ['id','document_id','mime_type','file_name','created','filehash']
+
+ 
+    def __repr__(self):
+        pv = ['id', self.id, 
+              'document_id', self.document_id,
+               'mime_type', self.mime_type, 
+               'file_name', self.file_name,
+               'created', self.created, 
+               'filehash', self.filehash]
+            
 
 class File(ResponseObject):
     """
     Manages return info after linking a file to a doc.
+    
+    Relevant methods:
+        ???
 
     """
     def __init__(self, json, m):
@@ -738,7 +820,7 @@ class Document(ResponseObject):
             return utils.property_values_to_string(pv)
 
 
-#%%
+#%% Documents
 #==============================================================================
 #                       Document View Types
 #==============================================================================
@@ -939,4 +1021,4 @@ class AllCatalogDocument(CatalogDocument):
         # TODO: Not yet implemented
         pass
 
-# %%
+

@@ -2,20 +2,18 @@
 """
 This module is meant to implement all functions described at:
 
-    #1) http://dev.mendeley.com/methods/
-    #
-    #   Shows request parameters a bit more clearly    
+1) https://dev.mendeley.com/methods/
+    - This site shows request parameters a bit more 
     
-    #2) https://api.mendeley.com/apidocs/
-    #
-    #   Testing interface, nicer organization
+2) https://api.mendeley.com/apidocs/
+    - Testing interface, nicer organization
     
 
 General Usage
 -------------
 from mendeley import API
 user_api = API()
-public_api = API()
+public_api = API('public')
 
 
 Request Options
@@ -30,6 +28,8 @@ TODO: Create an options class that can be given to the request (e.g. for return 
 Method Types (from Mendeley)
 ----------------------------
 Annotations
+   GET /annotations
+
 Academic Statuses
 Catalog Documents
 Catalog Search
@@ -50,7 +50,7 @@ Errors
 """
 
 #Standard Library
-from typing import Optional, Union, TypeVar, List
+from typing import Optional, Union, List, Literal
 import sys
 import mimetypes
 from os.path import basename
@@ -106,6 +106,11 @@ def _print_error(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs) 
 
 #==============================================================================
+
+
+class Options(object):
+    pass
+
 class API(object):
 
     annotations : 'Annotations'
@@ -155,10 +160,15 @@ class API(object):
         user_name : str (default None)
             - None : then the default user is loaded via config.DefaultUser
             - 'public' : then the public API is accessed
+            - <other user names> : loads other user info from user_config.py
         verbose : str
         force_reload_auth : bool (default False)
             If true, the authorization is recomputed even if it hasn't expired.
         default_return_type : {'object','json','raw','response'}
+        
+        Improvements
+        ------------
+        1. Support a user object as input
         
         """
 
@@ -260,6 +270,10 @@ class API(object):
             '---','--- method props ---',
             'annotations',cld(self.annotations),
             'definitions',cld(self.definitions),
+            'documents',cld(self.documents),
+            'files',cld(self.files),
+            'folders',cld(self.folders),
+            'trash',cld(self.trash),
             '---','--- internal ---',
             'access_token',cld(self.access_token),
             ]
@@ -338,6 +352,13 @@ class API(object):
             object - indicates that the result class object should be created.
                 This is the slowest option but provides the most functionality.
             json   - 
+            
+            
+        response_params : dict
+            This gets passed to the object.
+            
+        headers :
+            
             
         See Also:
         ---------
@@ -423,21 +444,25 @@ class API(object):
         This should only occur after the calling function has verified
         that no error was returned from the server.
         """
-        if return_type is 'object':
+        
+        if return_type == 'object':
             if response_params is None:
                 return object_fh(req.json(), self)
             else:
                 return object_fh(req.json(), self, response_params)
-        elif return_type is 'json':
+        elif return_type == 'json':
             return req.json()
-        elif return_type is 'raw':
+        elif return_type == 'raw':
             return req.text
-        elif return_type is 'response':
+        elif return_type == 'response':
             return req
-        elif return_type is 'ids':
+        elif return_type == 'ids':
             temp = req.json()
             return [x['id'] for x in temp]
         else:
+            print('-----------------------')
+            print(return_type)
+            print('-----------------------')
             raise Exception('No match found for return type')
 
     def catalog(self, **kwargs):
@@ -497,22 +522,59 @@ class Annotations(object):
         self.parent = parent
         self.url = BASE_URL + '/annotations'
 
-    def get(self, document_id=None):
+    def get(self,             
+            return_type: Optional[str]=None,
+            verbose: Optional[bool]=None,
+            deleted_since: DST=None,
+            document_id: Optional[str]=None,
+            group_id: Optional[str]=None,
+            include_trashed: Optional[bool]=None,
+            limit: Optional[int]=20,
+            modified_since: DST=None):
         """
         https://api.mendeley.com/apidocs#!/annotations/getAnnotations
         """
 
         if document_id is None:
             raise LookupError('Must enter a document ID to retrieve annotations.')
-
-        params = dict()
-        params['document_id'] = document_id
-        params['include_trashed'] = False
+        
+        d = dict()
+        if return_type and return_type is not None:
+            d['return_type'] = return_type
+        if verbose and verbose is not None:
+            d['verbose'] = verbose
+            
+        if deleted_since and deleted_since is not None:
+            d['deleted_since'] = deleted_since
+            convert_datetime_to_string(d, 'deleted_since')    
+        if group_id and group_id is not None:
+            d['group_id'] = group_id
+        if include_trashed and include_trashed is not None:
+            d['include_trashed'] = include_trashed
+        if limit and limit is not None:
+            if limit == 0:
+                #0 is code for get all
+                #we'll max out our per request size
+                #then merge below
+                d['limit'] = 200
+            else:
+                d['limit'] = limit
+        if modified_since and modified_since is not None:
+            d['modified_since'] = modified_since
+            convert_datetime_to_string(d, 'modified_since')
+        
+        
+        
+        
+        
+        
 
         headers = {'Content-Type' : 'application/vnd.mendeley-annotation.1+json'}
 
-        # return self.parent.make_get_request(url, models.Annotation, params, headers=headers)
-        resp = requests.get(self.url, params=params, headers=headers, auth=self.parent.access_token)
+        # return self.parent.make_get_request(url, models.Annotation, params, 
+        #headers=headers)
+        resp = requests.get(self.url, params=params, headers=headers, 
+                            auth=self.parent.access_token)
         if resp.status_code != 200:
             return []
         else:
@@ -593,12 +655,39 @@ class Definitions(object):
 
         return self.parent.make_get_request(url, models.document_types, kwargs)
 
+    def __repr__(self):
+        pv = [
+            '-------methods-------','-------------------',
+            'academic_statuses','academic_statuses',
+            'subject_areas','subject_areas',
+            'document_types','document_types',
+            ]
+        return utils.property_values_to_string(pv)
+
+
 class Documents(object):
+    """
+
+    GET    /documents
+    POST   /documents
+    DELETE /documents/{id}
+    GET    /documents/{id}
+    PATCH  /documents/{id}
+    POST   /documents/{id}/trash
+    GET    /documents/v1/{document_id}/files
+    POST   /documents/v1/{document_id}/files
+    DELETE /documents/v1/{document_id}/files/{file_id}
+    GET    /documents/v1/{document_id}/files/{file_id}
+
+    """
     def __init__(self, parent):
         self.parent = parent
+        
 
+    #TODO: make names mandatory for get
     def get(self,
             return_type: Optional[str]=None,
+            verbose: Optional[bool]=None,
             authored: Optional[bool]=None,
             folder_id: Optional[str]=None,
             group_id: Optional[str]=None,
@@ -652,6 +741,11 @@ class Documents(object):
             - 'created'
             - 'last_modified'
             - 'title'
+            
+        Other Parameters
+        ----------------
+        return_type
+        verbose
 
         Deleted Files
         -------------
@@ -665,6 +759,9 @@ class Documents(object):
         m = API()
         d = m.documents.get(limit=1)
         
+        m = API(default_return_type='json')
+        d = m.documents.get(limit=1)
+        
         """
 
         url = BASE_URL + '/documents'
@@ -672,6 +769,11 @@ class Documents(object):
         d = dict()
         if return_type and return_type is not None:
             d['return_type'] = return_type
+        if verbose and verbose is not None:
+            d['verbose'] = verbose
+            
+            
+            
         if authored and authored is not None:
             d['authored'] = authored
         if folder_id and folder_id is not None:
@@ -786,7 +888,8 @@ class Documents(object):
             'view': view,
             'limit': 1}
 
-        return self.parent.make_get_request(url, models.DocumentSet.create, kwargs, response_params)
+        return self.parent.make_get_request(url, models.DocumentSet.create, 
+                                            d, response_params)
 
     def get_deleted(self,
             limit: Optional[int] = 20,
@@ -937,8 +1040,95 @@ class Documents(object):
 
         resp =  self.parent.s.post(url, headers=headers, auth = self.parent.access_token)
         return
+    
+    
+    def search(self,  
+            return_type: Optional[str]=None,
+            verbose: Optional[bool]=None,
+            abstract: Optional[str]=None,
+            author: Optional[str]=None,
+            identifier: Optional[bool]=None,
+            limit: Optional[int]=10,
+            max_year: Optional[int]=None,
+            min_year: Optional[int]=None,
+            query: Optional[str]=None,
+            source: Optional[str]=None,
+            tag: Optional[str]=None,
+            title: Optional[str]=None,
+            use_and: Optional[bool]=None,
+            view: Optional[str] = None):
+        
+        url = BASE_URL + '/search/documents'
+        
+        d = dict()
+        if return_type and return_type is not None:
+            d['return_type'] = return_type
+        if verbose and verbose is not None:
+            d['verbose'] = verbose
+            
+        if abstract and abstract is not None:
+            d['abstract'] = abstract
+        if author and author is not None:
+            d['author'] = author
+        if identifier and identifier is not None:
+            d['identifier'] = identifier
+        if limit and limit is not None:
+            if limit == 0:
+                #0 is code for get all
+                #we'll max out our per request size
+                #then merge below
+                d['limit'] = 500
+            else:
+                d['limit'] = limit
+        if max_year and max_year is not None:
+            d['max_year'] = max_year
+        if min_year and min_year is not None:
+            d['min_year'] = min_year
+        if query and query is not None:
+            d['query'] = query
+        if source and source is not None:
+            d['source'] = source
+        if tag and tag is not None:
+            d['tag'] = tag
+        if use_and and use_and is not None:
+            d['use_and'] = use_and
+        if view and view is not None:
+            d['view'] = view
+
+        response_doc_fcn = document_fcns[view]
+        response_view = view
+        
+        #Most of these are reference only, except for the fcn value
+        response_params = {
+            'fcn': response_doc_fcn,
+            'view': response_view,
+            'limit': limit,
+            'page_id':0
+            }
+
+        verbose = _process_verbose(self.parent,d,response_params)
+        if verbose:
+            #TODO: Fix this, not valid for search
+            if limit == 0:
+                print("Requesting all documents from Mendeley with params: %s" % (d))
+            else:
+                print("Requesting up to %d documents from Mendeley with params: %s" % (limit, d))
+  
+        result = self.parent.make_get_request(url, models.DocumentSet.create, d, response_params)
+
+        if limit == 0:
+            #TODO: Test this when the return type is not an object ...
+            result.get_all_docs()       
+        
+        return result
+        
+        
 
 class Files(object):
+    """
+    
+    
+    """
     
     def __init__(self, parent):
         self.parent = parent
@@ -971,7 +1161,7 @@ class Files(object):
         response_params = {'document_id': doc_id}
 
         # Didn't want to deal with make_get_request
-        response = self.parent.s.get(url, params=kwargs, auth=self.parent.access_token)
+        response = self.parent.s.get(self.url, params=kwargs, auth=self.parent.access_token)
         json = response.json()[0]
 
         file_id = json['id']
@@ -981,6 +1171,93 @@ class Files(object):
         file_response = self.parent.s.get(file_url, auth=self.parent.access_token)
 
         return file_id
+    
+    
+    def get(self,
+                  return_type: Optional[str]=None,
+                  added_since: Optional[str]=None,
+                  catalog_id: Optional[str]=None,
+                  deleted_since: Optional[str]=None,
+                  document_id: Optional[str]=None,
+                  group_id: Optional[str]=None,
+                  include_trashed: Optional[bool]=None,
+                  limit: Optional[str]=None):
+        
+        """
+        
+        Returns information about files.
+
+        Parameters
+        ----------
+        return_type
+        added_since
+        catalog_id
+        deleted_since
+        document_id
+        group_id
+        include_trashed
+        limit
+        
+        Example
+        -------
+        from mendeley import API
+        m = API(default_return_type='json')
+        d = m.files.get(limit=20)
+        
+        
+        
+        
+        
+        
+        """
+        
+        d = dict()
+        if return_type and return_type is not None:
+            d['return_type'] = return_type
+        if added_since and added_since is not None:
+            d['added_since'] = added_since
+        if catalog_id and catalog_id is not None:
+            d['catalog_id'] = catalog_id
+        if deleted_since and deleted_since is not None:
+            d['deleted_since'] = deleted_since
+        if document_id and document_id is not None:
+            d['document_id'] = document_id
+        if group_id and group_id is not None:
+            d['group_id'] = group_id
+        if include_trashed and include_trashed is not None:
+            d['include_trashed'] = include_trashed            
+        if limit and limit is not None:
+            if limit == 0:
+                #0 is code for get all
+                #we'll max out our per request size
+                #then merge below
+                d['limit'] = 500
+            else:
+                d['limit'] = limit
+                
+                
+        response_params = {}
+        
+        result = self.parent.make_get_request(self.url, models.ResponseObject,
+                                              d, response_params)
+        
+        
+        verbose = _process_verbose(self.parent,d,response_params)
+        if verbose:
+            if limit == 0:
+                print("Requesting all documents from Mendeley with params: %s" % (d))
+            else:
+                print("Requesting up to %d documents from Mendeley with params: %s" % (limit, d))
+  
+        result = self.parent.make_get_request(url, models.DocumentSet.create, d, response_params)
+
+        if limit == 0:
+            #TODO: Test this when the return type is not an object ...
+            result.get_all_docs()   
+        
+        
+
+        return result
 
     def get_file_content_from_doc_id(self, doc_id, no_content=False):
         # First need to make a request to find files based on the document ID.
@@ -1127,6 +1404,121 @@ class Folders(object):
 
         return self.parent.make_post_request(url, models.Folder, params, headers=headers)
 
+
+class Initializer(object):
+    
+    
+            """
+                         type (com.mendeley.documents.api.DocumentType) = 
+                 ['journal' or 'book' or 'generic' or 'book_section' or 
+                  'conference_proceedings' or 'working_paper' or 'report' 
+                  or 'web_page' or 'thesis' or 'magazine_article' or 'statute' or 
+                  'patent' or 'newspaper_article' or 'computer_program' or 'hearing' 
+                  or 'television_broadcast' or 'encyclopedia_article' or 'case' or 
+                  'film' or 'bill'],
+        
+        """
+    
+    def __init__(self,
+                 title: str,
+                 dtype: Literal["test"],
+                 abstract: Optional[str]=None,
+                 accessed: Optional[str]=None,
+                 authored: Optional[bool]=None,
+                 authors: Optional(list[dict])=None,
+                 chapter: Optional[str]=None,
+                 citation_key: Optional[str]=None,
+                 city: Optional[str]=None,
+                 code: Optional[str]=None,
+                 confirmed: Optional[bool]=None,
+                 country: Optional[str]=None,
+                 day: Optional[int]=None,
+                 department: Optional[str]=None,
+                 edition: Optional[str]=None,
+                 editors: Optional(list[dict])=None,
+                 folder_uuids: Optional(list[str])=None,
+                 genre: Optional[str]=None,
+                 group_id: Optional[str]=None,
+                 hidden: Optional[bool]=None,
+                 identifiers: Optional[dict]=None,  
+                 institution: Optional[str]=None,
+                 issue: Optional[str]=None,
+                 keywords: Optional(list[str])=None,
+                 language: Optional[str]=None,
+                 medium: Optional[str]=None,
+                 month: Optional[int]=None,
+                 notes: Optional[str]=None,
+                 pages: Optional[str]=None,
+                 patent_application_number: Optional[str]=None,
+                 patent_legal_status: Optional[str]=None,
+                 patent_owner: Optional[str]=None,
+                 private_publication: Optional[bool]=None,
+                 profile_id: Optional[str]=None,
+                 publisher: Optional[str]=None,
+                 read: Optional[bool]=None,
+                 reprint_edition: Optional[str]=None,
+                 revision: Optional[str]=None,
+                 series: Optional[str]=None,
+                 series_editor: Optional[str]=None,
+                 series_number: Optional[str]=None,
+                 short_title: Optional[str]=None,
+                 source: Optional[str]=None,
+                 source_type: Optional[str]=None,
+                 starred: Optional[bool]=None,
+                 tags: Optional(list[str])=None,
+                 translators: Optional(list[dict])=None,
+                 user_context: Optional[str]=None,
+                 volume: Optional[str]=None,
+                 websites: Optional(list[str])=None,
+                 year: Optional[int]=None):
+        
+        pass
+    
+
+    
+    
+    
+    def doc(self):
+        pass
+    
+    
+    def identifiers(self):
+        pass
+    
+    def p(self,
+          last: str,
+          first: Optional[str]=None,
+          scopus: Optional[str]=None):
+        
+        "Shorter version of person"
+        
+        d = dict()
+        d['last'] = last
+        
+        if first and first is not None:
+            d['first'] = first
+        if scopus and scopus is not None:
+            d['scopus'] = scopus
+            
+        return d       
+        
+    
+    def person(self,
+               last_name: str,
+               first_name: Optional[str]=None,
+               scopus_author_id: Optional[str]=None):
+        
+        d = dict()
+        d['last_name'] = last_name
+        
+        if first_name and first_name is not None:
+            d['first_name'] = first_name
+        if scopus_author_id and scopus_author_id is not None:
+            d['scopus_author_id'] = scopus_author_id
+            
+        return d
+    
+    
 
 class MetaData(object):
     # https://api.mendeley.com/apidocs#!/metadata/getDocumentIdByMetadata

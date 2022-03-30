@@ -45,6 +45,9 @@ if hasattr(config,'config_location'):
     config_location = config.config_location
     
     if not os.path.exists(config_location):
+        print('----------------------------')
+        print('Config Location: %s' % (config_location,))
+        print('----------------------------')
         raise errors.InvalidConfig('Specified configuration path does not exist')
     
     loader = importlib.machinery.SourceFileLoader('config', config_location)    
