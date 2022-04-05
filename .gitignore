@@ -76,3 +76,4 @@ mendeley_testing_secret.txt
 # Merging leftovers
 *.orig
 
+.DS_Store

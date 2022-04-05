@@ -169,6 +169,15 @@ class Person(ResponseObject):
            'first_name: %s\n' % self.first_name + \
            'last_name: %s\n' % self.last_name
 
+class Photo(ResponseObject):
+    
+    @classmethod
+    def fields(cls):
+        return ['url', 'original','width','height']
+    
+    def initialize_array(json):
+        return [Photo(x) for x in json]
+
 
 class Annotation(ResponseObject):
     """
@@ -180,19 +189,36 @@ class Annotation(ResponseObject):
 
     Attributes
     ----------
-    id : string
-    type : string
+    color : {'r','g','b'} 0 - 255
+    created : datetime
+    document_id :
+    filehash :
+    id : ID of the annotation itself
+    last_modified : 
+    positions : [{'top_left':{'x','y'},'bottom_right',{'x','y'},'page'}]
+        There appears to be many rectangles for multi-line highlighting
+    previous_id :
+    pricacy_level :
+        - 'private'
+        - 
     profile_id : string
         Profile id (UUID) of the Mendeley user that added the document to
         the system.
+    text : string
+    type :
+        - 'highlight'
+        - 
+    
 
-    created : string
-    last_modified : string
+
+
+    
+    
+    
+    
     """
 
-    object_fields = {
-        'authors': Person.initialize_array,
-        'identifiers': DocumentIdentifiers}
+    object_fields = {}
 
     def __init__(self, json, m):
         """
@@ -220,32 +246,61 @@ class Annotation(ResponseObject):
 
     @classmethod
     def fields(cls):
-        return ['id', 'type', 'previous_id', 'created', 'text', 'profile_id',
-                'color', 'document_id', 'last_modified']
+        return ['color', 'created', 'document_id', 'filehash', 'id',
+                'last_modified','positions', 'previous_id', 'privacy_level',
+                'profile_id','text','type']
 
-    '''
-    @classmethod
-    def create(cls, json, m, params):
-        """
-        I believe this distinction was made to distinguish between instances
-        in which a set was required or instances in which by definition
-        only a single document would be returned.
 
-        This however needs to be clarified.
-        """
-        return DocumentSet(json, m)
-    '''
+    """
+    
+    [
+      {
+        "color": {
+          "b": 0,
+          "g": 0,
+          "r": 0
+        },
+        "created": "",
+        "document_id": "",
+        "filehash": "",
+        "id": "",
+        "last_modified": "",
+        "positions": [
+          {
+            "bottom_right": {
+              "x": 0,
+              "y": 0
+            },
+            "page": 0,
+            "top_left": {
+              "x": 0,
+              "y": 0
+            }
+          }
+        ],
+        "previous_id": "",
+        "privacy_level": "com.mendeley.platform.PrivacyLevel",
+        "profile_id": "",
+        "text": "",
+        "type": "com.mendeley.platform.model.AnnotationType"
+      }
+    ]
+    """
 
     def __repr__(self, pv_only=False):
         # TODO: Set this up like it looks in Mendeley
-        pv = ['profile_id: ', self.profile_id,
-              'created: ', self.created,
-              'last_modified: ', self.last_modified,
-              'id: ', self.id,
-              'type: ', self.type,
-              'title: ', td(self.title),
-              'document_id: ', self.document_id,
-              'text: ', self.text]
+        pv = ['color', self.color,
+              'created', self.created,
+              'document_id', self.document_id,
+              'filehash', self.filehash,
+              'id', self.id,
+              'last_modified', self.last_modified,
+              'positions', td(self.positions),
+              'previous_id',self.previous_id,
+              'privacy_level',self.privacy_level,
+              'profile_id',self.profile_id,
+              'text: ', td(self.text),
+              'type',self.type]
         if pv_only:
             return pv
         else:
@@ -287,6 +342,195 @@ def deleted_document_ids(json, m):
 
 # %% Main Objects
 
+class Profile(ResponseObject):
+    
+    """
+    {
+  "academic_status": "",
+  "biography": "",
+  "created": "",
+  "discipline": {
+    "name": "",
+    "subdisciplines": [
+      ""
+    ]
+  },
+  "disciplines": [
+    {
+      "name": "",
+      "subdisciplines": [
+        ""
+      ]
+    }
+  ],
+  "display_name": "",
+  "editorships": [
+    "Object"
+  ],
+  "education": [
+    "Object"
+  ],
+  "email": "",
+  "employment": [
+    "Object"
+  ],
+  "first_name": "",
+  "folder": "",
+  "id": "",
+  "institution": "",
+  "institution_details": "Object",
+  "last_name": "",
+  "link": "",
+  "location": "Object",
+  "marketing": false,
+  "member_type": "",
+  "middle_initials": "",
+  "orcid_id": "",
+  "personal_website": "",
+  "photo": {
+    "original": "",
+    "square": "",
+    "standard": ""
+  },
+  "photos": [
+    {
+      "height": 0,
+      "original": false,
+      "url": "",
+      "width": 0
+    }
+  ],
+  "privacy_restricted_view": false,
+  "research_interests": "",
+  "research_interests_list": [
+    ""
+  ],
+  "scopus_author_ids": [
+    ""
+  ],
+  "title": "",
+  "user_type": "com.mendeley.profiles.api.UserType",
+  "verified": false,
+  "visibility": "",
+  "web_user_id": 0
+}
+    
+    
+    """
+    
+    object_fields = {
+        'photos': Photo.initialize_array}
+    
+    
+
+    
+    def __init__(self,json,m:'API'):
+        
+        self.api = m
+        self.json = json
+        
+    @classmethod
+    def fields(cls):
+        return  ["academic_status",
+                "biography",
+                "created",
+                "discipline",
+                "disciplines",
+                "display_name",
+                "editorships",
+                "education",
+                "email",
+                "employment",
+                "first_name",
+                "folder",
+                "id",
+                "institution",
+                "institution_details",
+                "last_name",
+                "link",
+                "location",
+                "marketing",
+                "member_type",
+                "middle_initials",
+                "orcid_id",
+                "personal_website",
+                "photo",
+                "photos",
+                "privacy_restricted_view",
+                "research_interests",
+                "research_interests_list",
+                "scopus_author_ids",
+                "title",
+                "user_type",
+                "verified",
+                "visibility",
+                "web_user_id"]
+                
+            
+    def __repr__(self,pv_only=False):
+        
+        
+        """
+        "academic_status",
+                "biography",
+                "created",
+                "discipline",
+                "disciplines",
+                "display_name",
+                "editorships",
+                "education",
+                "email",
+                "employment",
+                "first_name",
+                "folder",
+                "id",
+                "institution",
+                "institution_details",
+                "last_name",
+                "link",
+                "location",
+        """
+        
+        pv = ['academic_status', self.academic_status,
+              'biography', self.biography,
+              'created', self.created,
+              'discipline', self.discipline,
+              'disciplines', td(self.disciplines),
+              'display_name', self.display_name,
+              'editorships', td(self.editorships),
+              'education',self.education,
+              'email',self.email,
+              'employment',self.employment,
+              'first_name', self.first_name,
+              'folder',self.folder,
+              'id', td(self.id),
+              'institution',self.institution,
+              'institution_details',self.institution_details,
+              'last_name',self.last_name,
+              'link', self.link,
+              'location',self.location,
+              'marketing',self.marketing,
+              'member_type',self.member_type,
+              'middle_initials',self.middle_initials,
+              'orcid_id',self.orcid_id,
+              'personal_website',self.personal_website,
+              "photo",self.photo,
+              'photos',cld(self.photos),
+              'privacy_restricted_view',self.privacy_restricted_view,
+              'research_interests',self.research_interests,
+              'research_interests_list',self.research_interests_list,
+              'scopus_author_ids',self.scopus_author_ids,
+              'title',self.title,
+              'user_type',self.user_type,
+              'verified',self.verified,
+              'visibility',self.visibility,
+              'web_user_id',self.web_user_id]
+        if pv_only:
+            return pv
+        else:
+            return utils.property_values_to_string(pv)
+        
+
 class ProfileInfo(object):
     """
     http://dev.mendeley.com/methods/#profile-attributes
@@ -315,6 +559,22 @@ class ProfileInfo(object):
             'first_name : %s\n' % (self.first_name) + \
             ' last_name : %s\n' % (self.last_name)
 
+class AnnotationSet(object):
+    
+    def __init__(self,json,m:'API'):
+        self.api = m
+        self.json = json
+        self.annotations = [Annotation(x,m) for x in json]
+        
+    def __repr__(self):
+        pv = [
+        'annotations', cld(self.annotations), 
+        '-----','---  internal ---',
+        'api',cld(self.api),
+        'json','<json>']
+        return utils.property_values_to_string(pv)
+    
+    #TODO: Initialize next set
 
 class DocumentSet(object):
     """
@@ -344,6 +604,8 @@ class DocumentSet(object):
         self.response_params = params
         self.verbose = params['verbose']
         self.page_id = params['page_id']
+
+            
         self.json = json
 
         fcn = params['fcn']
@@ -800,6 +1062,7 @@ class Document(ResponseObject):
         return return_bundle
 
     def get_annotations(self):
+        #TODO: Implement this
         pass
 
     def __repr__(self, pv_only=False):

@@ -23,14 +23,70 @@ supported:
 
     TODO: fill this in: example _return_type
 
-TODO: Create an options class that can be given to the request (e.g. for return type)
+Method Types (from Mendeley, apidocs)
+-------------------------------------
+Annotations
+    GET     /annotations (document_id)     - Annotations.get
+    POST    /annotations (document_id)
+    DELETE  /annotations/{annotation_id}
+    GET     /annotations/{annotation_id}
+    PATCH   /annotations/{annotation_id}
+    
+Catalog
+    GET /catalog
+    GET /catalog/{catalogId}
 
-Method Types (from Mendeley)
+Document_Types
+    GET /document_types - Definitions.document_types
+
+Document From File    
+    POST /documents
+
+Documents
+    GET     /documents
+    POST    /documents
+    DELETE  /documents/{id}
+    GET     /documents/{id}
+    PATCH   /documents/{id}
+    POST    /documents/{id}/trash
+    GET     /documents/v1/{document_id}/files
+    POST    /documents/v1/{document_id}/files
+    DELETE  /documents/v1/{document_id}/files/{file_id}
+    GET     /documents/v1/{document_id}/files/{file_id}
+
+File Contents
+    POST /file_contents
+    POST /file_contents
+    
+Files
+    GET     /files
+    POST    /files
+    DELETE  /files/{file_id}
+    GET     /files/{file_id}
+
+Folders
+    GET     /folders
+    POST    /folders
+    DELETE  /folders/{id}
+    GET     /folders/{id}
+    PATCH   /folders/{id}
+    GET     /folders/{id}/documents
+    POST    /folders/{id}/documents
+    DELETE  /folders/{id}/documents/{document_id}
+
+
+
+
+
+OLD methods
 ----------------------------
 Annotations
-   GET /annotations
+    GET /annotations
 
-Academic Statuses
+Academic Statuses - DEPRECate
+    GET /academic_statuses - api.definitions.
+    
+
 Catalog Documents
 Catalog Search
 Datasets
@@ -107,9 +163,6 @@ def _print_error(*args, **kwargs):
 
 #==============================================================================
 
-
-class Options(object):
-    pass
 
 class API(object):
 
@@ -199,11 +252,14 @@ class API(object):
 
         #TODO: Eventually I'd like to trim this based on user vs public
         self.annotations = Annotations(self)
+        self.catalog = Catalog(self)
         self.definitions = Definitions(self)
         self.documents = Documents(self)
         self.files = Files(self)
         self.folders = Folders(self)
+        self.profiles = Profiles(self)
         self.trash = Trash(self)
+        
 
     def convert_datetime_to_string(self,dt):
         #TODO: make format string a module variable
@@ -269,6 +325,7 @@ class API(object):
             'has_last_link', self.has_last_link,
             '---','--- method props ---',
             'annotations',cld(self.annotations),
+            'catalog',cld(self.catalog),
             'definitions',cld(self.definitions),
             'documents',cld(self.documents),
             'files',cld(self.files),
@@ -406,7 +463,10 @@ class API(object):
            
             raise Exception('Call failed with status: %d, see above for details' % (resp.status_code))
 
-        return self.handle_return(resp, return_type, response_params, object_fh)
+        return self.handle_return(resp, 
+                                  return_type, 
+                                  response_params, 
+                                  object_fh)
 
     def make_patch_request(self, url, object_fh, params, response_params=None, headers=None, files=None):
         #
@@ -465,55 +525,7 @@ class API(object):
             print('-----------------------')
             raise Exception('No match found for return type')
 
-    def catalog(self, **kwargs):
 
-        """
-        
-        TODO: This should probably be moved ...        
-        
-        Parameters
-        ----------
-        arxiv
-        doi
-        isbn
-        issn
-        pmid
-        scopus
-        filehash
-        view
-         - bib
-         - stats
-         - client - this option doesn't make much sense
-         - all
-        id : string
-            Short for Catalog ID. Mendeley's catalog id. The only way I know of
-            getting this is from a previous Mendeley search.
-        
-        Examples
-        --------
-        from mendeley import API
-        m = API()
-        c = m.catalog(pmid='11826063')
-        c = m.catalog(pmid='11826063',view='bib')
-        c = m.catalog(cid='f631d7ed-9926-34ed-b56e-0f5bb236b87b')
-        """
-
-        """
-        Internal Note: Returns a list of catalog entries that match a 
-        given query 
-        #TODO: Is this the case for a given id? NO - only returns signle entry
-        #TODO: Build this into tests
-        """
-
-        url = BASE_URL + '/catalog'
-        if 'id' in kwargs:
-            id = kwargs.pop('id')
-            url += '/%s/' % id
-
-        view = kwargs.get('view')
-        response_params = {'fcn': catalog_fcns[view]}
-
-        return self.make_get_request(url, models.DocumentSet.create, kwargs, response_params)
 
 
 class Annotations(object):
@@ -533,29 +545,44 @@ class Annotations(object):
             modified_since: DST=None):
         """
         https://api.mendeley.com/apidocs#!/annotations/getAnnotations
+        
+        
+        Example
+        -------
+        from mendeley import API
+        m = API()
+        
+        #1) Generic request to get annotations
+        a = m.annotations.get()
+        
+        #2) Requested for annotations from a specific document
+        d = m.documents.search(title='Analysis of a model for excitation of myelinated nerve.')
+        #TODO: We will eventually support getting annotations directly
+        #from the document
+        doc_id = d.docs[0].id
+        a = m.annotations.get(document_id=doc_id)
+        
+        
+        
         """
 
-        if document_id is None:
-            raise LookupError('Must enter a document ID to retrieve annotations.')
-        
         d = dict()
         if return_type and return_type is not None:
             d['return_type'] = return_type
         if verbose and verbose is not None:
             d['verbose'] = verbose
-            
         if deleted_since and deleted_since is not None:
             d['deleted_since'] = deleted_since
-            convert_datetime_to_string(d, 'deleted_since')    
+            convert_datetime_to_string(d, 'deleted_since')   
+        if document_id and document_id is not None:
+            d['document_id'] = group_id
         if group_id and group_id is not None:
             d['group_id'] = group_id
         if include_trashed and include_trashed is not None:
             d['include_trashed'] = include_trashed
         if limit and limit is not None:
             if limit == 0:
-                #0 is code for get all
-                #we'll max out our per request size
-                #then merge below
+                #Largest allowable value
                 d['limit'] = 200
             else:
                 d['limit'] = limit
@@ -563,22 +590,12 @@ class Annotations(object):
             d['modified_since'] = modified_since
             convert_datetime_to_string(d, 'modified_since')
         
-        
-        
-        
-        
-        
-
         headers = {'Content-Type' : 'application/vnd.mendeley-annotation.1+json'}
 
-        # return self.parent.make_get_request(url, models.Annotation, params, 
-        #headers=headers)
-        resp = requests.get(self.url, params=params, headers=headers, 
-                            auth=self.parent.access_token)
-        if resp.status_code != 200:
-            return []
-        else:
-            return resp.text
+        return self.parent.make_get_request(self.url, 
+                                            models.AnnotationSet, 
+                                            d, 
+                                            headers=headers)
 
     def create(self, annotation_body):
         """
@@ -598,7 +615,128 @@ class Annotations(object):
 
         headers = {'Content-Type' : 'application/vnd.mendeley-folder.1+json'}
         pass
+    
+    def __repr__(self):
+        pv = [
+            '-------methods-------','-------------------',
+            'get','get',
+            'create','create',
+            'delete','delete',
+            ]
+        return utils.property_values_to_string(pv)
 
+
+class Catalog(object):
+    
+    def __init__(self, parent):
+        self.parent = parent
+        
+    def get(self,             
+                return_type: Optional[str]=None,
+                verbose: Optional[bool]=None,
+                arxiv: Optional[str]=None,
+                author_profile_id: Optional[str]=None,
+                cid: Optional[str]=None,
+                document_id: Optional[str]=None,
+                doi: Optional[str]=None,
+                filehash: Optional[str]=None,
+                isbn: Optional[str]=None,
+                issn: Optional[str]=None,
+                pii: Optional[str]=None,
+                pmid: Optional[str]=None,
+                pui: Optional[str]=None,
+                scopus: Optional[str]=None,
+                sgr: Optional[str]=None,
+                url: Optional[str]=None,
+                view: Optional[str]=None):
+
+        """
+        
+        TODO: This should probably be moved ...        
+        
+        Parameters
+        ----------
+        arxiv
+        author_profile_id
+        cid
+        document_id
+        doi
+        filehash
+        isbn
+        issn
+        pii
+        pmid
+        pui
+        scopus
+        sgr
+        url
+        view : string
+             - bib
+             - stats
+             - client - this option doesn't make much sense
+             - all
+
+        Examples
+        --------
+        from mendeley import API
+        m = API()
+        c = m.catalog.get(pmid='11826063')
+        c = m.catalog.get((pmid='11826063',view='bib')
+        c = m.catalog.get((cid='92d3ca3c-1e07-31c0-88e3-7bca73c26179')
+        """
+        
+        d = dict()
+        if return_type and return_type is not None:
+            d['return_type'] = return_type
+        if verbose and verbose is not None:
+            d['verbose'] = verbose
+        if arxiv and arxiv is not None:
+            d['arxiv'] = arxiv 
+        if author_profile_id and author_profile_id is not None:
+            d['author_profile_id'] = author_profile_id
+        if document_id and document_id is not None:
+            d['document_id'] = document_id
+        if doi and doi is not None:
+            d['doi'] = doi
+        if filehash and filehash is not None:
+            d['filehash'] = filehash 
+        if isbn and isbn is not None:
+            d['isbn'] = isbn
+        if issn and issn is not None:
+            d['issn'] = issn
+        if pii and pii is not None:
+            d['pii'] = pii
+        if pmid and pmid is not None:
+            d['pmid'] = pmid 
+        if pui and pui is not None:
+            d['pui'] = pui
+        if scopus and scopus is not None:
+            d['scopus'] = scopus
+        if sgr and sgr is not None:
+            d['sgr'] = sgr        
+        if url and url is not None:
+            d['url'] = url
+        if view and view is not None:
+            d['view'] = view   
+        
+        headers = {'Content-Type' : 'application/vnd.mendeley-annotation.1+json'}
+
+        url2 = BASE_URL + '/catalog'
+        if cid and cid is not None:
+            url2 += '/%s/' % cid
+
+        response_params = {'fcn': catalog_fcns[view],
+                           'view': view,
+                           'page_id':0}
+        
+        verbose = _process_verbose(self,d,response_params)
+
+        return self.make_get_request(url2, 
+                                     models.DocumentSet.create, 
+                                     d, 
+                                     response_params,
+                                     headers=headers)
+        
 class Definitions(object):
     """
     TODO: These values should presumably only be queried once ...
@@ -607,7 +745,7 @@ class Definitions(object):
     def __init__(self, parent):
         self.parent = parent
 
-    def academic_statuses(self, **kwargs):
+    def _academic_statuses(self, **kwargs):
         """
         
         https://api.mendeley.com/apidocs#!/academic_statuses/get
@@ -745,7 +883,13 @@ class Documents(object):
         Other Parameters
         ----------------
         return_type
+            - 'object'
+            - 'json'
+            - 'raw'
+            - 'response'
+            - 'ids'
         verbose
+        
 
         Deleted Files
         -------------
@@ -758,6 +902,9 @@ class Documents(object):
         from mendeley import API
         m = API()
         d = m.documents.get(limit=1)
+        
+        d = m.documents.get()
+        
         
         m = API(default_return_type='json')
         d = m.documents.get(limit=1)
@@ -827,13 +974,17 @@ class Documents(object):
             }
 
         verbose = _process_verbose(self.parent,d,response_params)
+        
         if verbose:
             if limit == 0:
                 print("Requesting all documents from Mendeley with params: %s" % (d))
             else:
                 print("Requesting up to %d documents from Mendeley with params: %s" % (limit, d))
   
-        result = self.parent.make_get_request(url, models.DocumentSet.create, d, response_params)
+        result = self.parent.make_get_request(url, 
+                                              models.DocumentSet.create, 
+                                              d, 
+                                              response_params)
 
         if limit == 0:
             #TODO: Test this when the return type is not an object ...
@@ -1058,6 +1209,40 @@ class Documents(object):
             use_and: Optional[bool]=None,
             view: Optional[str] = None):
         
+        """
+        https://api.mendeley.com/apidocs/docs#!/documents_0/search
+        
+        Multiple search fields may be specified. Callers must provide either 
+        a query, or at least one of title, author, source or abstract. 
+        Setting a minimum or maximum year excludes documents with no defined 
+        year.
+        
+        
+        Parameters
+        ----------
+        abstract :
+        author :
+        identifier :
+        limit :
+        max_year :
+        min_year :
+        query :
+        source :
+        tag :
+        title :
+        use_and :logical
+        view :
+            
+            
+        Examples
+        --------
+        from mendeley import API
+        m = API()
+        d = m.documents.search(title='Analysis of a model for excitation of myelinated nerve.')
+        
+        """
+        
+        
         url = BASE_URL + '/search/documents'
         
         d = dict()
@@ -1090,6 +1275,8 @@ class Documents(object):
             d['source'] = source
         if tag and tag is not None:
             d['tag'] = tag
+        if title and title is not None:
+            d['title'] = title
         if use_and and use_and is not None:
             d['use_and'] = use_and
         if view and view is not None:
@@ -1408,16 +1595,16 @@ class Folders(object):
 class Initializer(object):
     
     
-            """
-                         type (com.mendeley.documents.api.DocumentType) = 
-                 ['journal' or 'book' or 'generic' or 'book_section' or 
-                  'conference_proceedings' or 'working_paper' or 'report' 
-                  or 'web_page' or 'thesis' or 'magazine_article' or 'statute' or 
-                  'patent' or 'newspaper_article' or 'computer_program' or 'hearing' 
-                  or 'television_broadcast' or 'encyclopedia_article' or 'case' or 
-                  'film' or 'bill'],
+    """
+        type (com.mendeley.documents.api.DocumentType) = 
+        ['journal' or 'book' or 'generic' or 'book_section' or 
+         'conference_proceedings' or 'working_paper' or 'report' 
+         or 'web_page' or 'thesis' or 'magazine_article' or 'statute' or 
+         'patent' or 'newspaper_article' or 'computer_program' or 'hearing' 
+         or 'television_broadcast' or 'encyclopedia_article' or 'case' or 
+         'film' or 'bill'],
         
-        """
+    """
     
     def __init__(self,
                  title: str,
@@ -1425,7 +1612,7 @@ class Initializer(object):
                  abstract: Optional[str]=None,
                  accessed: Optional[str]=None,
                  authored: Optional[bool]=None,
-                 authors: Optional(list[dict])=None,
+                 authors: Optional[list[dict]]=None,
                  chapter: Optional[str]=None,
                  citation_key: Optional[str]=None,
                  city: Optional[str]=None,
@@ -1435,15 +1622,15 @@ class Initializer(object):
                  day: Optional[int]=None,
                  department: Optional[str]=None,
                  edition: Optional[str]=None,
-                 editors: Optional(list[dict])=None,
-                 folder_uuids: Optional(list[str])=None,
+                 editors: Optional[list[dict]]=None,
+                 folder_uuids: Optional[list[str]]=None,
                  genre: Optional[str]=None,
                  group_id: Optional[str]=None,
                  hidden: Optional[bool]=None,
                  identifiers: Optional[dict]=None,  
                  institution: Optional[str]=None,
                  issue: Optional[str]=None,
-                 keywords: Optional(list[str])=None,
+                 keywords: Optional[list[str]]=None,
                  language: Optional[str]=None,
                  medium: Optional[str]=None,
                  month: Optional[int]=None,
@@ -1465,11 +1652,11 @@ class Initializer(object):
                  source: Optional[str]=None,
                  source_type: Optional[str]=None,
                  starred: Optional[bool]=None,
-                 tags: Optional(list[str])=None,
-                 translators: Optional(list[dict])=None,
+                 tags: Optional[list[str]]=None,
+                 translators: Optional[list[dict]]=None,
                  user_context: Optional[str]=None,
                  volume: Optional[str]=None,
-                 websites: Optional(list[str])=None,
+                 websites: Optional[list[str]]=None,
                  year: Optional[int]=None):
         
         pass
@@ -1527,24 +1714,77 @@ class MetaData(object):
 
 class Profiles(object):
     
+    #GET   /profiles/v2
+    #GET   /profiles/v2/{id}
+    #GET   /profiles/v2/me
+    #PATCH /profiles/v2/me
+    
     def __init__(self,parent):
         self.parent = parent
+        self.url = BASE_URL + '/profiles/v2'
         
         #TODO: If public, provide no "me" method
         
-    def get(self, **kwargs):
+    def get(self,             
+            return_type: Optional[str]=None,
+            verbose: Optional[bool]=None,
+            authored_document_catalog_id: Optional[str]=None,
+            email: Optional[str]=None,
+            scopus_author_id: Optional[str]=None):
         """
-        https://api.mendeley.com/apidocs/docs#!/profiles/getProfiles
-        https://api.mendeley.com/apidocs/docs#!/profiles/get
+        
+        Parameters
+        ----------
+        authored_document_catalog_id : string
+        email : string
+        scopus_author_id : string
         
         """
-        pass
+        d = dict()
+        if return_type and return_type is not None:
+            d['return_type'] = return_type
+        if verbose and verbose is not None:
+            d['verbose'] = verbose
+        if authored_document_catalog_id and authored_document_catalog_id is not None:
+            d['authored_document_catalog_id'] = authored_document_catalog_id
+        if email and email is not None:
+            d['email'] = email
+        if scopus_author_id and scopus_author_id is not None:
+            d['scopus_author_id'] = scopus_author_id    
+            
+        response_params = {
+                'page_id':0
+                }
+            
+        verbose = _process_verbose(self.parent,d,response_params)
+        
+        result = self.parent.make_get_request(self.url, 
+                                              models.Profile, 
+                                              d, 
+                                              response_params)
+        
+        return result
+            
     
     def me(self):
         """
-        https://api.mendeley.com/apidocs/docs#!/profiles/getProfileForLoggedInUser
+        
+        Examples
+        --------
+        from mendeley import API
+        m = API()
+        p = m.profiles.me()
+        
+
         """
-        pass
+        d = dict()
+        response_params = {}
+        url = self.url + '/me'
+        result = self.parent.make_get_request(url, 
+                                              models.Profile, 
+                                              d)
+        
+        return result
     
     #def update_my_profile()   => Let's implement this in the profile model
     

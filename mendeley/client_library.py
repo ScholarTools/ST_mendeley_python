@@ -623,13 +623,13 @@ class Sync(object):
 
         """
         - /documents/?modified_since=2020-01-22T19:36:03.000Z&limit=100&view=all HTTP/1.1
-        - GET /documents/?limit=100&deleted_since=2020-01-22T19:36:03.000Z HTTP/1.1
-        - GET /trash/?modified_since=2020-01-22T19:36:03.000Z&limit=100&view=all HTTP/1.1
-        - GET /files/?include_trashed=true&limit=100&deleted_since=2020-01-22T19:36:09.000Z HTTP/1.1
-        - GET /files/?added_since=2020-01-22T19:36:09.000Z&include_trashed=true&limit=100 HTTP/1.1
-        - GET /annotations/?modified_since=2020-01-22T19:36:09.000Z&limit=200&include_trashed=true HTTP/1.1
-        - GET /annotations/?limit=200&include_trashed=true&deleted_since=2020-01-22T19:36:10.000Z HTTP/1.1
-        - GET /recently_read/ HTTP/1.1- POST /events/_batch/ HTTP/1.1
+        - GET /documents/?limit=100&deleted_since=2020-01-22T19:36:03.000Z HTTP/1.1
+        - GET /trash/?modified_since=2020-01-22T19:36:03.000Z&limit=100&view=all HTTP/1.1
+        - GET /files/?include_trashed=true&limit=100&deleted_since=2020-01-22T19:36:09.000Z HTTP/1.1
+        - GET /files/?added_since=2020-01-22T19:36:09.000Z&include_trashed=true&limit=100 HTTP/1.1
+        - GET /annotations/?modified_since=2020-01-22T19:36:09.000Z&limit=200&include_trashed=true HTTP/1.1
+        - GET /annotations/?limit=200&include_trashed=true&deleted_since=2020-01-22T19:36:10.000Z HTTP/1.1
+        - GET /recently_read/ HTTP/1.1- POST /events/_batch/ HTTP/1.1
         
         """
 
@@ -841,7 +841,7 @@ class LibraryCleaner():
         Doc = self.db.Document
 
         q = session.query(Doc).filter_by(pmid=None)
-        if sort is 'new_first' or sort is None:
+        if sort == 'new_first' or sort is None:
             q.order_by(Doc.last_modified)
         else:
             q.order_by(desc(Doc.last_modified))

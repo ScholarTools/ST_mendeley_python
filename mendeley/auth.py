@@ -10,10 +10,18 @@ Mendeley Authethentication Documentation:
 https://dev.mendeley.com/reference/topics/authorization_overview.html
 https://dev.mendeley.com/reference/topics/authorization_auth_code.html
 
-Important Methods
------------------
-retrieve_public_authorization
-retrieve_user_authorization
+Public Methods
+-----------------------------
+retrieve_public_authorization()
+retrieve_user_authorization()
+
+
+
+
+config parameters:
+    - default_save_path
+
+
 
 
 """
@@ -38,6 +46,8 @@ import pytz #This seems to be a 3rd party library but is installed on
 from . import utils
 from .utils import get_truncated_display_string as td
 #from .utils import get_list_class_display as cld
+
+#TODO: Why don't we use config_helpers?
 from . import config
 from . import errors
 
@@ -57,6 +67,11 @@ These are methods that other modules might want to access directly.
 def retrieve_public_authorization(force_reload=False,verbose=False):
     """    
     Loads public credentials
+    
+    Parameters
+    ----------
+    force_reload : False
+    verbose : False
 
     Returns:
     --------
@@ -76,6 +91,12 @@ def retrieve_user_authorization(user_name=None,
                                 verbose=False):
     """
     
+    Parameters
+    ----------
+    user_name : string
+    user_info : 
+    
+    
     """
     if force_reload:
         return _UserAuthorization(user_name, user_info, session)
@@ -92,8 +113,8 @@ class _Authorization(AuthBase):
     
     """
     This is a superclass for:
-    _UserAuthorization
-    _PublicAuthorization
+        _UserAuthorization
+        _PublicAuthorization
     
     TODO: I currently have a lot of duplicated code between the two classes 
     that needs to be moved to here.
@@ -104,6 +125,7 @@ class _Authorization(AuthBase):
     ----------
     token_expired : 
     expires : timestamp
+    session : requests.Session
     """
  
     """
@@ -120,12 +142,12 @@ class _Authorization(AuthBase):
     # 3) request with invalid token
     #
     #Default value: check if there is less than 1 minute
-    RENEW_TIME = datetime.timedelta(minutes = 1) 
+    RENEW_TIME = datetime.timedelta(minutes=1) 
     
     AUTH_URL = 'https://api.mendeley.com/oauth/token'   
    
     @staticmethod
-    def get_save_base_path(create_folder_if_no_exist = False):
+    def get_save_base_path(create_folder_if_no_exist=False):
         """
         The API credentials are stored at:
         <repo_base_path>/data/credentials
@@ -219,7 +241,7 @@ class _Authorization(AuthBase):
         """
         Saves the class instance to disk.
         """
-        save_path = self.get_file_path(self.user_name,create_folder_if_no_exist = True)
+        save_path = self.get_file_path(self.user_name, create_folder_if_no_exist=True)
         with open(save_path, "wb") as f:
             pickle.dump(self,f)
 
@@ -230,7 +252,7 @@ class _PublicAuthorization(_Authorization):
     
     """
         
-    def __init__(self,session = None):
+    def __init__(self, session = None):
         self.user_name ='public'
         self.populate_session(session)
         temp_json = self.create_initial_token()
@@ -397,7 +419,7 @@ class _UserAuthorization(_Authorization):
         .init_json_attributes   
         
         """
-        temp = UserTokenRetriever(user_info,self.session)
+        temp = UserTokenRetriever(user_info=user_info,session=self.session)
         return temp.token_json
         
     def init_json_attributes(self, json):
@@ -564,9 +586,20 @@ class _UserAuthorization(_Authorization):
 class UserTokenRetriever(object):
     
     #??? Why is this not underscore leading?
+    #Eventually I want to make this public
+    #   - Note, the user 
     
     """
-            Rough OAUTH Outline
+    - Called by _UserAuthorization in create_initial_token
+    - Manual call
+        from mendeley import auth
+        ut = auth.UserTokenRetriever()
+    
+    """
+    
+    
+    """
+        Rough OAUTH Outline
         -------------------
         1) User askes to use client (i.e. this code or an "app")
         2) Client gives User some information to give to Mendeley regarding
@@ -579,7 +612,7 @@ class UserTokenRetriever(object):
         User to never give it's Mendeley credentials to the client.
     """
     
-    def __init__(self,user_info,session):
+    def __init__(self,user_info=None,session=None):
         """
         
         UserTokenRetriever(user_info,session)
@@ -589,15 +622,16 @@ class UserTokenRetriever(object):
         user_info : UserInfo
         session : requests.Session
         """
-        MANUAL_APPROACH = False
+        manual_approach = user_info is None
 
+        if session is None:
+            session = requests.Session()
+            
         self.session = session
-        self.user_info = user_info
         
         #Authorization Token
         #---------------------------------
         BASE_AUTH_URL = "https://api.mendeley.com/oauth/authorize"
-        #TODO: Move these up, change name here to be consistent
         ACCESS_TOKEN_URL = "https://api.mendeley.com/oauth/token"
         
         rand_state = random.random()
@@ -613,19 +647,19 @@ class UserTokenRetriever(object):
         
         auth_url = prepped.url
         
-        if MANUAL_APPROACH:
+        if manual_approach:
             print("Navigate to the following address, follow prompts:")
             print(auth_url)
             current_url = input("What's the final url?")
         else:
-            current_url  = self.get_authorization_code_auto(auth_url)
+            current_url  = self.get_authorization_code_auto(auth_url,user_info)
         
         x = re.findall("\?code=([^&]+)",current_url)
         code = x[0]
         
         self.token_json = self.trade_code_for_user_access_token(code,ACCESS_TOKEN_URL)
 
-    def get_authorization_code_auto(self,auth_url):  
+    def get_authorization_code_auto(self,auth_url,user_info):  
         """
         The authorization code is what the user gives to the Client, allowing
         the Client to make requests on behalf of the User to Mendeley
@@ -641,8 +675,8 @@ class UserTokenRetriever(object):
         import chromedriver_binary # pylint: disable=unused-import
         #python-chromedriver in anaconda
         
-        USER_EMAIL = self.user_info.user_name
-        USER_PASS = self.user_info.password
+        USER_EMAIL = user_info.user_name
+        USER_PASS = user_info.password
         if HEADLESS_BROWSER:
             options = webdriver.ChromeOptions()
             options.add_argument('headless')
