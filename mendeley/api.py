@@ -59,10 +59,10 @@ File Contents
     POST /file_contents
     
 Files
-    GET     /files
+    GET     /files   - Files.get
     POST    /files
     DELETE  /files/{file_id}
-    GET     /files/{file_id}
+    GET     /files/{file_id} - Files.get_file_bytes
 
 Folders
     GET     /folders
@@ -74,8 +74,50 @@ Folders
     POST    /folders/{id}/documents
     DELETE  /folders/{id}/documents/{document_id}
 
+Groups (Not Implemented)
+    GET /groups
+    GET /groups/{id}
+    GET /groups/{id}/members
 
+groups-v2 : Groups (Not Implemented)
+    GET /groups/v2
+    POST /groups/v2
+    DELETE /groups/v2/{group_id}
+    GET /groups/v2/{group_id}
+    TODO
 
+identifier_types : Document identifier types
+    GET /identifier_types   Definitions.doc_id_types
+    
+institutions : Institutions
+    GET /institutions    - Deprecated?
+    GET /institutions/{id}
+    
+metadata : Documents Metadata Lookup
+    GET /metadata
+    
+profiles : Profiles
+    GET /profiles/v2
+    GET /profiles/v2/{id}
+    GET /profiles/v2/me
+    PATCH /profiles/v2/me
+    
+documents : Library search
+    GET /search/documents
+    
+subject_areas : Subject areas
+    GET /subject_areas
+    
+trash : Trash
+    GET /trash
+    DELETE /trash/{id}
+    GET /trash/{id}
+    POST /trash/{id}/restore
+    
+user_roles : User roles
+    GET /user_roles
+    
+    
 
 
 OLD methods
@@ -83,8 +125,6 @@ OLD methods
 Annotations
     GET /annotations
 
-Academic Statuses - DEPRECate
-    GET /academic_statuses - api.definitions.
     
 
 Catalog Documents
@@ -112,6 +152,7 @@ import mimetypes
 from os.path import basename
 from datetime import datetime
 import json
+import urllib
 
 #Third party
 import requests
@@ -126,6 +167,8 @@ from .utils import get_truncated_display_string as td
 from .utils import get_list_class_display as cld
 
 from . import errors
+
+USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.75 Safari/537.36"
 
 DST = Union[str,datetime,None]
 
@@ -163,7 +206,76 @@ def _print_error(*args, **kwargs):
 
 #==============================================================================
 
+class API2(object):
+    
+    """
+    from mendeley import API, API2
+    api = API()
+    m = API2(api)
+    
+    """
+    
+    def __init__(self,api):
+        
+        #TODO: Support loading api if not passed in
+        
+        self.api = api
+        self.retrieval = Retrieval(api)
+        pass
+    
+    def __repr__(self):
+        pv = [
+            'api',cld(self.api),
+            'retrieval',cld(self.retrieval),
+            ]
+        return utils.property_values_to_string(pv)
 
+class Retrieval(object):
+    
+    def __init__(self,api):
+        
+        """
+        from mendeley import API, API2
+        api = API()
+        m = API2(api)
+        
+        d = m.retrieval.get_document()
+        
+        
+        """
+        
+        self.get_document = api.documents.get
+        self.get_files = api.files.get
+        
+    def __repr__(self):
+        pv = [
+            '---','--- method props ---',
+            'get_document','',
+            'get_files','',
+            ]
+        return utils.property_values_to_string(pv)
+        
+
+class Search(object):
+    
+    def __init__(self,api):
+        
+        """
+        from mendeley import API, API2
+        api = API()
+        m = API2(api)
+        
+        d = m.retrieval.get_document()
+        
+        
+        """
+        
+        self.search_user_library = api.documents.search
+        self.search_catalog = api.catalog.get
+
+class Create(object):
+    pass
+    
 class API(object):
 
     annotations : 'Annotations'
@@ -257,6 +369,7 @@ class API(object):
         self.documents = Documents(self)
         self.files = Files(self)
         self.folders = Folders(self)
+        self.metadata = MetaData(self)
         self.profiles = Profiles(self)
         self.trash = Trash(self)
         
@@ -389,7 +502,7 @@ class API(object):
     def make_get_request(self,
                          url,
                          object_fh,
-                         params,
+                         params=None,
                          response_params=None,
                          headers=None):
         """
@@ -434,6 +547,10 @@ class API(object):
                 params = dict((k, v) for k, v in params.items() if v)
 
         return_type = params.pop('return_type', self.default_return_type)
+        
+        
+        #https://stackoverflow.com/questions/21823965/use-20-instead-of-for-space-in-python-query-parameters
+        params = urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
 
         # NOTE: We make authorization go through the access token. The request
         # will call the access_token prior to sending the request. Specifically
@@ -452,7 +569,7 @@ class API(object):
         self.last_object_fh = object_fh
         self.last_return_type = return_type
         self.last_headers = headers
-
+        
         if not resp.ok:
             _print_error("----------------   Error Details   ----------------")
             _print_error("Mendeley API Get Requested Failed")
@@ -651,25 +768,32 @@ class Catalog(object):
                 view: Optional[str]=None):
 
         """
-        
-        TODO: This should probably be moved ...        
-        
+                
         Parameters
         ----------
         arxiv
         author_profile_id
-        cid
-        document_id
-        doi
-        filehash
-        isbn
-        issn
-        pii
-        pmid
-        pui
-        scopus
-        sgr
-        url
+        cid :
+            ID in the Mendeley Catalog (Catalog ID)
+        document_id : string
+            
+        doi : string
+            Digital object identifier.
+        filehash : 
+            MD5?
+        isbn :
+        issn : 
+        pii : string
+            Publisher identifier. See scientedirect for examples:
+            e.g., https://www.sciencedirect.com/science/article/pii/B9781560534334500158
+            see: https://en.wikipedia.org/wiki/Publisher_Item_Identifier
+        pmid : string
+            Pubmed ID
+        pui : 
+        scopus : string
+        sgr : string
+            Scopus Group Identifier
+        url : string
         view : string
              - bib
              - stats
@@ -681,10 +805,16 @@ class Catalog(object):
         from mendeley import API
         m = API()
         c = m.catalog.get(pmid='11826063')
-        c = m.catalog.get((pmid='11826063',view='bib')
-        c = m.catalog.get((cid='92d3ca3c-1e07-31c0-88e3-7bca73c26179')
+        c = m.catalog.get(pmid='11826063',view='bib')
+        c = m.catalog.get(cid='92d3ca3c-1e07-31c0-88e3-7bca73c26179')
+        c = m.catalog.get(pui='2002602386')
+        
+        Improvements
+        ------------
+        1. Implement unwrap single
         """
         
+        #unwrap_single = False
         d = dict()
         if return_type and return_type is not None:
             d['return_type'] = return_type
@@ -729,13 +859,16 @@ class Catalog(object):
                            'view': view,
                            'page_id':0}
         
-        verbose = _process_verbose(self,d,response_params)
+        verbose = _process_verbose(self.parent,d,response_params)
 
-        return self.make_get_request(url2, 
+        return self.parent.make_get_request(url2, 
                                      models.DocumentSet.create, 
                                      d, 
                                      response_params,
                                      headers=headers)
+    
+        #if unwrap_single:
+        #    pass
         
 class Definitions(object):
     """
@@ -744,21 +877,26 @@ class Definitions(object):
 
     def __init__(self, parent):
         self.parent = parent
+        
 
-    def _academic_statuses(self, **kwargs):
+        
+    def doc_id_types(self):
         """
         
-        https://api.mendeley.com/apidocs#!/academic_statuses/get
+        https://api.mendeley.com/apidocs/docs#!/identifier_types/getAllDocumentTypes
         
         Example
         -------        
         from mendeley import API
         m = API()
-        a_status = m.definitions.academic_statuses()
+        id_types = m.definitions.doc_id_types()
         """
-        url = BASE_URL + '/academic_statuses'
 
-        return self.parent.make_get_request(url, models.academic_statuses, kwargs)
+        url = BASE_URL + '/identifier_types'
+        
+        return self.parent.make_get_request(url, models.identifier_types)
+
+
 
     def subject_areas(self, **kwargs):
         """
@@ -1320,55 +1458,17 @@ class Files(object):
     def __init__(self, parent):
         self.parent = parent
         self.url = BASE_URL + '/files'
-
-    def get_single(self, **kwargs):
-        """
-        # https://api.mendeley.com/apidocs#!/annotations/getFiles
-
-        THIS DOESN'T REALLY DO ANYTHING RIGHT NOW.
-
-        Parameters
-        ----------
-        id :
-        document_id :
-        catalog_id :
-        filehash :
-        mime_type :
-        file_name :
-        size :
-
-        Returns
-        -------
-
-        """
-
-        doc_id = kwargs.get('document_id')
-
-        # Not sure what this should be doing
-        response_params = {'document_id': doc_id}
-
-        # Didn't want to deal with make_get_request
-        response = self.parent.s.get(self.url, params=kwargs, auth=self.parent.access_token)
-        json = response.json()[0]
-
-        file_id = json['id']
-
-        file_url = self.url + '?id=' + file_id
-
-        file_response = self.parent.s.get(file_url, auth=self.parent.access_token)
-
-        return file_id
-    
     
     def get(self,
-                  return_type: Optional[str]=None,
-                  added_since: Optional[str]=None,
-                  catalog_id: Optional[str]=None,
-                  deleted_since: Optional[str]=None,
-                  document_id: Optional[str]=None,
-                  group_id: Optional[str]=None,
-                  include_trashed: Optional[bool]=None,
-                  limit: Optional[str]=None):
+            return_type: Optional[str]=None,
+            verbose: Optional[bool]=None,
+            added_since: Optional[str]=None,
+            catalog_id: Optional[str]=None,
+            deleted_since: Optional[str]=None,
+            document_id: Optional[str]=None,
+            group_id: Optional[str]=None,
+            include_trashed: Optional[bool]=None,
+            limit: Optional[str]=None):
         
         """
         
@@ -1388,14 +1488,8 @@ class Files(object):
         Example
         -------
         from mendeley import API
-        m = API(default_return_type='json')
+        m = API()
         d = m.files.get(limit=20)
-        
-        
-        
-        
-        
-        
         """
         
         d = dict()
@@ -1422,67 +1516,47 @@ class Files(object):
             else:
                 d['limit'] = limit
                 
-                
-        response_params = {}
-        
-        result = self.parent.make_get_request(self.url, models.ResponseObject,
-                                              d, response_params)
-        
-        
-        verbose = _process_verbose(self.parent,d,response_params)
-        if verbose:
-            if limit == 0:
-                print("Requesting all documents from Mendeley with params: %s" % (d))
-            else:
-                print("Requesting up to %d documents from Mendeley with params: %s" % (limit, d))
-  
-        result = self.parent.make_get_request(url, models.DocumentSet.create, d, response_params)
+        response_params = {
+            'fcn': models.File,
+            'limit': limit,
+            'page_id': 0
+            }
 
-        if limit == 0:
-            #TODO: Test this when the return type is not an object ...
-            result.get_all_docs()   
+        verbose = _process_verbose(self.parent,d,response_params)
         
+        if verbose:
+            print('Retrieving file info')
         
+        result = self.parent.make_get_request(self.url, 
+                                              models.FileSet,
+                                              d, 
+                                              response_params)
 
         return result
+    
+    def get_file_bytes(self,file_id):
+        """
+        
+        from mendeley import API
+        m = API()
+        d = m.files.get(limit=20)
+        content = m.files.get_file_content(d.docs[0].id)
+        
 
-    def get_file_content_from_doc_id(self, doc_id, no_content=False):
-        # First need to make a request to find files based on the document ID.
-        # This returns the file ID for the attached file (if found)
-        params = {'document_id': doc_id}
-        headers = {'Content-Type': 'application/vnd.mendeley-file.1+json'}
+        """
+        
+        # Next need to make another API request using the file ID in order
+        # to retrieve the file content and download it.
+        new_url = self.url + '/' + file_id
+        new_params = {'file_id': file_id}
+        resp = requests.get(new_url, 
+                            params=new_params, 
+                            auth=self.parent.access_token)
 
-        resp = requests.get(self.url, params=params, headers=headers, auth=self.parent.access_token)
-
-        file_json = None
-        if resp.status_code == 404:
-            raise FileNotFoundError('Document could not be found.')
-        elif resp.status_code != 200:
-            print(resp)
-            raise PermissionError('Could not connect to the server.')
-        else:
-            file_json = resp.json()
-
-        if isinstance(file_json, list):
-            file_json = file_json[0]
-
-        file_name = file_json.get('file_name')
-        file_id = file_json.get('id')
-
-        if not no_content:
-            # Next need to make another API request using the file ID in order
-            # to retrieve the file content and download it.
-            new_url = self.url + '/' + file_id
-            new_params = {'file_id': file_id}
-            resp = requests.get(new_url, params=new_params, auth=self.parent.access_token)
-
-            file_content = resp.content
-        else:
-            file_content = None
-
-        return file_content, file_name, file_id
-
-
+        file_content = resp.content
+        
+        return file_content
+        
     def link_file(self, file, params, file_url=None):
         """
 
@@ -1709,7 +1783,160 @@ class Initializer(object):
 
 class MetaData(object):
     # https://api.mendeley.com/apidocs#!/metadata/getDocumentIdByMetadata
-    pass
+    
+    def __init__(self,parent):
+        self.parent = parent
+        
+    def get(self,
+            return_type: Optional[str]=None,
+            verbose: Optional[bool]=None,
+            arxiv: Optional[str]=None,
+            authors : Optional[str]=None,
+            doi: Optional[str]=None,
+            filehash: Optional[str]=None,
+            isbn: Optional[str]=None,
+            pmid : Optional[str]=None,
+            source: Optional[str]=None,
+            title: Optional[str]=None,
+            year: Optional[str]=None):
+        """
+        
+        
+
+        Parameters
+        ----------
+        return_type : Optional[str], optional
+            DESCRIPTION. The default is None.
+        verbose : Optional[bool], optional
+            DESCRIPTION. The default is None.
+        arxiv : Optional[str], optional
+            DESCRIPTION. The default is None.
+        authors : Optional[str], optional
+            DESCRIPTION. The default is None.
+        doi : Optional[str], optional
+            DESCRIPTION. The default is None.
+        filehash : Optional[str], optional
+            DESCRIPTION. The default is None.
+        isbn : Optional[str], optional
+            DESCRIPTION. The default is None.
+        pmid : Optional[str], optional
+            DESCRIPTION. The default is None.
+        source : Optional[str], optional
+            DESCRIPTION. The default is None.
+        title : Optional[str], optional
+            DESCRIPTION. The default is None.
+        year : Optional[str], optional
+            DESCRIPTION. The default is None.
+
+        Returns
+        -------
+        result : TYPE
+            DESCRIPTION.
+            
+            
+        Examples
+        --------
+        This isn't working all that well. Not sure why
+        
+        #TODO: Better examples that call docs first
+        
+        
+        filehash = '07e3d3dc3f2838dfe5d2ba553046eb9c07913a81'
+        filehash = '6e01e190431fdfe9f18ed7fe3d34ebde'
+        
+        #Not working even though filehash is valid
+        filehash = '5279de540e3d884fe8afc441a8809577326af7bd'
+        
+        from mendeley import API
+        m = API()
+        
+        
+        c = m.metadata.get(filehash=filehash)
+        
+        
+        title = "Sensory and motor responses of precentral cortex cells during comparable"
+        from mendeley import API
+        m = API()
+        c = m.metadata.get(title=title)
+        
+        
+        
+        
+
+        """
+            
+        d = dict()   
+        if return_type and return_type is not None:
+            d['return_type'] = return_type
+        if verbose and verbose is not None:
+            d['verbose'] = verbose
+        if arxiv and arxiv is not None:
+            d['arxiv'] = arxiv
+        if authors and authors is not None:
+            d['authors'] = authors
+        if doi and doi is not None:
+            d['doi'] = doi
+        if filehash and filehash is not None:
+            d['filehash'] = filehash
+        if isbn and isbn is not None:
+            d['isbn'] = isbn
+        if pmid and pmid is not None:
+            d['pmid'] = pmid
+        if source and source is not None:
+            d['source'] = source
+        if title and title is not None:
+            d['title'] = title    
+        if year and year is not None:
+            d['year'] = year                
+            
+            
+        headers = {'Accept':'application/vnd.mendeley-document-lookup.1+json'}    
+                        
+        response_params = {
+                'page_id':0
+                }
+            
+        verbose = _process_verbose(self.parent,d,response_params)
+        
+        url = BASE_URL + '/metadata'
+        
+        try:
+            result = self.parent.make_get_request(url, 
+                                                  models.json_only, 
+                                                  d, 
+                                                  response_params,
+                                                  headers=headers)  
+        except:
+            result = None
+            
+
+        return result              
+            
+        
+        """
+        filehash OR
+        title OR
+            - improved by authors or source
+        identifier
+        
+        filehash = '07e3d3dc3f2838dfe5d2ba553046eb9c07913a81'
+        filehash = '6e01e190431fdfe9f18ed7fe3d34ebde'
+        
+        #Not working even though filehash is valid
+        filehash = '5279de540e3d884fe8afc441a8809577326af7bd'
+        
+        title = "Sensory and motor responses of precentral cortex cells during comparable"
+        
+        from mendeley import API
+        m = API()
+        
+        c = m.metadata.get(filehash=filehash)
+        
+        c = m.metadata.get(title=title)
+        
+        
+        """
+
 
 
 class Profiles(object):

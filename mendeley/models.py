@@ -17,8 +17,10 @@ mendeley.api => contains the code that makes requests for these models
 
 #Standard Imports
 from typing import Optional, Union, TypeVar, List
-
 from typing import TYPE_CHECKING
+
+
+
 
 if TYPE_CHECKING:
     from . import API
@@ -59,6 +61,9 @@ class WTF2(object):
 
 
 # %% Response Object
+
+def json_only(json,m,response_params):
+    return json
 
 class ResponseObject(object):
     # I made this a property so that the user could change this processing
@@ -306,6 +311,10 @@ class Annotation(ResponseObject):
         else:
             return utils.property_values_to_string(pv)
 
+# %% Definitions
+
+def identifier_types(json, m):
+    return json
 
 def academic_statuses(json, m):
     """
@@ -745,7 +754,7 @@ class FileSet(object):
         
         """
         self.links = m.last_response.links
-        self.total_count = m.last_response.headers['Mendeley-Count']
+        
         self.api = m
         self.response_params = params
         self.verbose = params['verbose']
@@ -756,15 +765,35 @@ class FileSet(object):
 
         # TODO: Figure out how to support lazy loading
         self.docs = [fcn(x, m) for x in json]
+        
+        try:
+            self.total_count = m.last_response.headers['Mendeley-Count']
+        except:
+            self.total_count = len(self.docs)
+        
         #self.view = params['view']
+        
+    def __repr__(self,pv_only=False):
+        pv = ['links', cld(self.links),
+              'total_count', self.total_count,
+              'api', cld(self.api), 
+              'response_params', cld(self.response_params),
+              'verbose',self.verbose,
+              'page_id', self.page_id,
+              'docs',cld(self.docs)]
+        
+        if pv_only:
+            return pv
+        else:
+            return utils.property_values_to_string(pv)
 
-class File2(ResponseObject):
+class File(ResponseObject):
     
     
     """
     Created this for:
-    files.get()
-    Not sure where the original File class comes from
+        .files.get()
+
     
     id :
     document_id :
@@ -789,56 +818,72 @@ class File2(ResponseObject):
 
         """
         super(File, self).__init__(json)
+        
+        self.api = m
 
         #self.file_id = self.__getattr__('id')
         #self.file_location = 'https://api.mendeley.com/files/' + self.file_id
-
-    @classmethod
-    def fields(cls):
-        return ['id','document_id','mime_type','file_name','created','filehash']
-
- 
-    def __repr__(self):
-        pv = ['id', self.id, 
-              'document_id', self.document_id,
-               'mime_type', self.mime_type, 
-               'file_name', self.file_name,
-               'created', self.created, 
-               'filehash', self.filehash]
-            
-
-class File(ResponseObject):
-    """
-    Manages return info after linking a file to a doc.
-    
-    Relevant methods:
-        ???
-
-    """
-    def __init__(self, json, m):
+        
+    def download(self,root_path=None,target_path=None):
         """
+        
+
         Parameters
         ----------
-        json : dict
+        target_path : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+        
+        from mendeley import API
+        m = API()
+        d = m.files.get(limit=20)
 
         """
-        super(File, self).__init__(json)
+        if (root_path is None) and (target_path is None):
+            #https://stackoverflow.com/questions/9319317/quick-and-easy-file-dialog-in-python
+            import tkinter as tk
+            from tkinter import filedialog
 
-        self.file_id = self.__getattr__('id')
-        self.file_location = 'https://api.mendeley.com/files/' + self.file_id
+            root = tk.Tk()
+            root.withdraw()
+
+            target_path = filedialog.askopenfilename()
+            if len(target_path) == 0:
+                #canceled
+                return
+            
+        elif target_path is None:
+            #get info from root path
+            pass
+        
+        file_bytes = self.api.files.get_file_bytes(self.id)
+        with open(target_path, 'wb') as f: 
+            f.write(file_bytes)
 
     @classmethod
     def fields(cls):
-        return ['id', 'document_id', 'created', 'file_name', 'authors', 'doi']
+        return ['id','document_id','mime_type','file_name','size','created','filehash']
 
-    def __repr__(self):
-        return u'' + \
-            'title: %s\n' % self.__getattr__('file_name') + \
-            'id: %s\n' % self.file_id + \
-            'file_location: %s\n' % self.file_location + \
-            'document_id %s\n' % self.__getattr__('document_id')
-
-
+ 
+    def __repr__(self,pv_only=False):
+        pv = ['id', self.id, 
+              'document_id', self.document_id,
+              'mime_type', self.mime_type, 
+              'file_name', self.file_name,
+              'size',self.size,
+              'created', self.created, 
+              'filehash', self.filehash,
+              'methods','-----------',
+              'download()','Download file to disk']
+        
+        if pv_only:
+            return pv
+        else:
+            return utils.property_values_to_string(pv)
+            
 class Folder(object):
     """
 
@@ -961,7 +1006,8 @@ class Document(ResponseObject):
         return ['source',
                 'year',
                 'identifiers',
-                'id', 'type',
+                'id', 
+                'type',
                 'created',
                 'profile_id',
                 'last_modified',
@@ -983,6 +1029,10 @@ class Document(ResponseObject):
         This however needs to be clarified.
         """
         return DocumentSet(json, m)
+
+    def get_files(self):
+        
+        return self.api.files.get(document_id=self.id)
 
     def add_file(self, file_content=None, download_file_url=None):
         """
@@ -1025,7 +1075,9 @@ class Document(ResponseObject):
 
     def add_tag(self, tag):
         pass
+    
 
+    """
     def add_all_references(self):
 
         #TODO: This needs to be documented ...
@@ -1060,6 +1112,7 @@ class Document(ResponseObject):
         return_bundle = {'total_refs':total_refs, 'all_ref_dois':all_ref_dois, 'without_dois':without_dois}
         return_bundle['all_reference_info'] = all_reference_info
         return return_bundle
+    """
 
     def get_annotations(self):
         #TODO: Implement this
@@ -1076,6 +1129,15 @@ class Document(ResponseObject):
                 pv.extend([key, value])
             else:
                 pv.extend([key, cld(value)])
+                
+                
+        pv2 = ['methods','-------------',
+               'get_files()','Returns files',
+               'add_file','Adds file',
+               'add_tag','Adds tag',
+               'get_annotations','asfd']
+        
+        pv.extend(pv2)
 
         if pv_only:
             return pv
@@ -1196,7 +1258,7 @@ class PatentDocument(Document):
     pass
 
 
-# %%
+# %% Catalog Documents
 """
 Catalog Documents
 """

@@ -2,10 +2,32 @@
 """
 """
 
+import hashlib
+import os
+
+# BUF_SIZE is totally arbitrary, change for your app!
+BUF_SIZE = 65536  # lets read stuff in 64kb chunks!
+
+def get_file_hash(bytes_or_file_path):
+    
+    sha1 = hashlib.sha1()
+    
+    if os.path.exists(bytes_or_file_path):
+        file_path = bytes_or_file_path
+        with open(file_path, 'rb') as f:
+            while True:
+                data = f.read(BUF_SIZE)
+                if not data:
+                    break
+                sha1.update(data)
+    else:
+        bytes = bytes_or_file_path
+        sha1.update(bytes)
+        
+    return sha1
 
 class _Quotes(str):
     pass
-
 
 def quotes(input_value):
     if input_value is None:
